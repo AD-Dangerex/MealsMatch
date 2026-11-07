@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ "List surplus food" if mode == "donation" else "Create a food request" }} | FoodBridge{% endblock %}
+{% block content %}
+<section class="page-shell">
+    <a class="back-link" href="{{ url_for('dashboard') }}">← Back to dashboard</a>
+    <div class="form-card">
+        <div class="section-label">{{ "DONOR WORKSPACE" if mode == "donation" else "RECIPIENT WORKSPACE" }}</div>
+        <h1>{{ "Share surplus food." if mode == "donation" else "Tell us what you need." }}</h1>
+        <p class="form-intro">
+            {{ "Add accurate quantity and expiry details so organisations can find and collect your food." if mode == "donation" else "Describe the food category, quantity, and collection deadline for your organisation." }}
+        </p>
+        <form method="post" class="stacked-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if mode == "donation" %}
+                <label>Food name
+                    <input type="text" name="food_name" maxlength="120" required value="{{ request.form.get('food_name', '') }}" placeholder="e.g. Fresh mixed vegetables">
+                </label>
+                <label>Food category
+                    <input type="text" name="category" maxlength="60" required value="{{ request.form.get('category', '') }}" placeholder="e.g. vegetables, bakery, dairy">
+                </label>
+                <label>Quantity (kg)
+                    <input type="number" name="quantity" min="0.1" max="100000" step="0.1" required value="{{ request.form.get('quantity', '') }}">
+                </label>
+                <label>Dietary tags
+                    <input type="text" name="dietary_tags" value="{{ request.form.get('dietary_tags', '') }}" placeholder="comma-separated, e.g. vegetarian, vegan, gluten-free">
+                    <small>Only add tags that accurately describe this food.</small>
+                </label>
+                <label>Allergens
+                    <input type="text" name="allergens" value="{{ request.form.get('allergens', '') }}" placeholder="comma-separated, e.g. nuts, dairy, wheat">
+                </label>
+                <label>Use by / expiry time
+                    <input type="datetime-local" name="expires_at" required value="{{ request.form.get('expires_at', '') }}">
+                </label>
+            {% else %}
+                <label>Food category
+                    <input type="text" name="category" maxlength="60" required value="{{ request.form.get('category', '') }}" placeholder="e.g. vegetables, bakery, dairy">
+                </label>
+                <label>Quantity needed (kg)
+                    <input type="number" name="quantity" min="0.1" max="100000" step="0.1" required value="{{ request.form.get('quantity', '') }}">
+                </label>
+                <label>Dietary requirements
+                    <input type="text" name="dietary_requirements" value="{{ request.form.get('dietary_requirements', '') }}" placeholder="comma-separated, e.g. vegetarian, gluten-free">
+                    <small>Food without all required dietary tags will not be recommended.</small>
+                </label>
+                <label>Allergens to exclude
+                    <input type="text" name="excluded_allergens" value="{{ request.form.get('excluded_allergens', '') }}" placeholder="comma-separated, e.g. nuts, dairy, wheat">
+                    <small>Listings containing any of these allergens will not be recommended.</small>
+                </label>
+                <label>Urgency
+                    <select name="urgency" required>
+                        {% for value, label in [(1, "1 — Normal"), (2, "2 — Soon"), (3, "3 — Important"), (4, "4 — Very urgent"), (5, "5 — Critical")] %}
+                            <option value="{{ value }}" {{ "selected" if request.form.get("urgency", "3") == value|string }}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Latest collection time
+                    <input type="datetime-local" name="collection_deadline" required value="{{ request.form.get('collection_deadline', '') }}">
+                </label>
+            {% endif %}
+            <button type="submit" class="primary-button form-submit">{{ "Publish food listing" if mode == "donation" else "Submit food request" }}</button>
+        </form>
+    </div>
+</section>
+{% endblock %}

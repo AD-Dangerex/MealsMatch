@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ "Create an account" if mode == "register" else "Log in" }} | FoodBridge{% endblock %}
+{% block content %}
+<section class="page-shell auth-shell">
+    <div class="auth-card">
+        <div class="section-label">FOODBRIDGE COMMUNITY</div>
+        <h1>{{ "Join the connection." if mode == "register" else "Welcome back." }}</h1>
+        <p class="form-intro">
+            {{ "Create an account for your organisation to share food or find support." if mode == "register" else "Log in to manage your food listings, requests, and matches." }}
+        </p>
+        <form method="post" class="stacked-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if mode == "register" %}
+                <label>Your name
+                    <input type="text" name="name" maxlength="100" autocomplete="name" required value="{{ request.form.get('name', '') }}">
+                </label>
+                <label>Organisation
+                    <input type="text" name="organization" maxlength="120" required value="{{ request.form.get('organization', '') }}">
+                </label>
+                <label>Account type
+                    <select name="role" required>
+                        <option value="recipient" {{ "selected" if request.form.get("role", selected_role) == "recipient" }}>Recipient organisation</option>
+                        <option value="donor" {{ "selected" if request.form.get("role", selected_role) == "donor" }}>Food donor</option>
+                    </select>
+                </label>
+                <label>City
+                    <input type="text" name="city" maxlength="100" autocomplete="address-level2" required value="{{ request.form.get('city', '') }}">
+                </label>
+            {% endif %}
+            <label>Email
+                <input type="email" name="email" maxlength="254" autocomplete="email" required value="{{ request.form.get('email', '') }}">
+            </label>
+            <label>Password
+                <input type="password" name="password" minlength="{{ 10 if mode == 'register' else 1 }}" autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}" required>
+                {% if mode == "register" %}<small>Use at least 10 characters.</small>{% endif %}
+            </label>
+            <button type="submit" class="primary-button form-submit">{{ "Create account" if mode == "register" else "Log in" }}</button>
+        </form>
+        <p class="auth-switch">
+            {% if mode == "register" %}
+                Already registered? <a href="{{ url_for('login') }}">Log in</a>
+            {% else %}
+                New to FoodBridge? <a href="{{ url_for('register') }}">Create an account</a>
+            {% endif %}
+        </p>
+    </div>
+</section>
+{% endblock %}
