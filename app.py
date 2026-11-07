@@ -53,6 +53,14 @@ def load_session_secret():
         secret_file = Path(configured_secret_file)
     elif os.environ.get("DATABASE_PATH"):
         secret_file = Path(os.environ["DATABASE_PATH"]).parent / ".session_secret"
+    elif os.environ.get("RENDER"):
+        persistent_mount = Path("/var/data")
+        if not persistent_mount.is_mount():
+            raise RuntimeError(
+                "Meals Match needs a Render persistent disk mounted at /var/data "
+                "to keep sessions stable across restarts."
+            )
+        secret_file = persistent_mount / ".session_secret"
     else:
         secret_file = Path(app.instance_path) / ".session_secret"
     secret_file.parent.mkdir(parents=True, exist_ok=True)

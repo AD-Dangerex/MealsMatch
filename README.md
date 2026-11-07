@@ -91,9 +91,11 @@ administrator.
 continues to incur its applicable costs. If the existing service was created
 manually, ensure its settings include the persistent disk mount and database
 path, and a stable `SESSION_SECRET`; pushing this Blueprint file alone may not
-change a manually configured service. On Render, the app now refuses to start
-without `DATABASE_PATH` rather than silently creating accounts on temporary
-storage.
+change a manually configured service. If `DATABASE_PATH` or
+`SESSION_SECRET_FILE` is missing, the app uses `/var/data/foodbridge.db` and
+`/var/data/.session_secret` only when `/var/data` is actually mounted as a
+persistent disk; otherwise it stops with an actionable startup error rather
+than using temporary storage.
 
 When the disk is mounted, the app attempts to copy an existing
 `instance/foodbridge.db` into it the first time, before applying schema

@@ -135,12 +135,17 @@ CREATE INDEX IF NOT EXISTS idx_users_role
 
 def database_path():
     configured = os.environ.get("DATABASE_PATH")
-    if os.environ.get("RENDER") and not configured:
-        raise RuntimeError(
-            "DATABASE_PATH must point to a database on the Render persistent disk."
-        )
     if configured:
         path = Path(configured)
+    elif os.environ.get("RENDER"):
+        persistent_mount = Path("/var/data")
+        if not persistent_mount.is_mount():
+            raise RuntimeError(
+                "Meals Match needs a Render persistent disk mounted at /var/data. "
+                "Mount a disk at /var/data in the service's Disks settings, or set "
+                "DATABASE_PATH to a database file on the mounted disk."
+            )
+        path = persistent_mount / "foodbridge.db"
     else:
         path = Path(current_app.instance_path) / "foodbridge.db"
     path.parent.mkdir(parents=True, exist_ok=True)
