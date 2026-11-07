@@ -161,6 +161,68 @@ def csv_safe(value):
     return value
 
 
+def filter_recommendations(recommendations, query):
+    search = query.get("q", "").strip()[:80].casefold()
+    category = query.get("category", "").strip().casefold()[:60]
+    storage = query.get("storage", "").strip()
+    sort = query.get("sort", "score").strip()
+    if storage not in {"ambient", "refrigerated", "frozen"}:
+        storage = ""
+    if sort not in {"score", "expiring", "urgency", "quantity"}:
+        sort = "score"
+
+    categories = sorted({item["category"].title() for item in recommendations})
+    filtered = [
+        item
+        for item in recommendations
+        if (not category or item["category"].casefold() == category)
+        and (not storage or item["storage_method"] == storage)
+        and (
+            not search
+            or search
+            in " ".join(
+                (
+                    item["food_name"],
+                    item["category"],
+                    item["city"],
+                    item["donor_name"],
+                    item["recipient_name"],
+                )
+            ).casefold()
+        )
+    ]
+
+    sort_keys = {
+        "score": lambda item: (
+            -item["score"],
+            item["expires_at"],
+            item["food_name"].casefold(),
+        ),
+        "expiring": lambda item: (
+            item["expires_at"],
+            -item["score"],
+            item["food_name"].casefold(),
+        ),
+        "urgency": lambda item: (
+            -item["urgency"],
+            -item["score"],
+            item["expires_at"],
+        ),
+        "quantity": lambda item: (
+            -item["available_quantity"],
+            -item["score"],
+            item["food_name"].casefold(),
+        ),
+    }
+    filtered.sort(key=sort_keys[sort])
+    return filtered, {
+        "q": query.get("q", "").strip()[:80],
+        "category": category,
+        "storage": storage,
+        "sort": sort,
+    }, categories
+
+
 def parse_datetime(value, label):
     try:
         parsed = datetime.fromisoformat(value)
@@ -186,11 +248,11 @@ def send_password_reset_email(email, reset_url):
     try:
         port = int(os.environ.get("SMTP_PORT", "587"))
         message = EmailMessage()
-        message["Subject"] = "Reset your FoodBridge password"
+        message["Subject"] = "Reset your Meals Match password"
         message["From"] = settings["sender"]
         message["To"] = email
         message.set_content(
-            "We received a request to reset your FoodBridge password.\n\n"
+            "We received a request to reset your Meals Match password.\n\n"
             f"Use this secure link within 30 minutes:\n{reset_url}\n\n"
             "If you did not request this, you can ignore this email."
         )
@@ -199,7 +261,7 @@ def send_password_reset_email(email, reset_url):
             mail_server.login(settings["username"], settings["password"])
             mail_server.send_message(message)
     except (OSError, smtplib.SMTPException, ValueError):
-        app.logger.exception("Could not send FoodBridge password reset email")
+        app.logger.exception("Could not send Meals Match password reset email")
         return False
 
     return True
@@ -315,7 +377,7 @@ def register():
             else:
                 session.clear()
                 session["user_id"] = user_id
-                flash("Your account is ready. Welcome to FoodBridge!", "success")
+                flash("Your account is ready. Welcome to Meals Match!", "success")
                 return redirect(url_for("dashboard"))
 
     return render_template("auth.html", mode="register", selected_role=selected_role)
@@ -647,7 +709,7 @@ def complete_google_profile():
 
             session.clear()
             session["user_id"] = user_id
-            flash("Your FoodBridge account is ready.", "success")
+            flash("Your Meals Match account is ready.", "success")
             return redirect(url_for("dashboard"))
 
     return render_template(
@@ -741,8 +803,12 @@ def dashboard():
         for donation in donations:
             if donation["status"] in ("available", "partially_allocated"):
                 recommendations.extend(
-                    get_recommendations(db, donation=donation, limit=3)
+                    get_recommendations(db, donation=donation)
                 )
+        recommendation_total = len(recommendations)
+        recommendations, recommendation_filters, recommendation_categories = (
+            filter_recommendations(recommendations, request.args)
+        )
         allocations = db.execute(
             """SELECT a.*, d.food_name, d.quantity_unit, d.storage_method, d.pickup_start,
                       d.pickup_end, d.pickup_notes, d.packaging,
@@ -770,6 +836,9 @@ def dashboard():
             metrics=donor_metrics,
             donations=donations,
             recommendations=recommendations,
+            recommendation_total=recommendation_total,
+            recommendation_filters=recommendation_filters,
+            recommendation_categories=recommendation_categories,
             allocations=allocations,
         )
 
@@ -789,8 +858,12 @@ def dashboard():
     for food_request in requests:
         if food_request["status"] in ("open", "partially_fulfilled"):
             recommendations.extend(
-                get_recommendations(db, food_request=food_request, limit=3)
+                get_recommendations(db, food_request=food_request)
             )
+    recommendation_total = len(recommendations)
+    recommendations, recommendation_filters, recommendation_categories = (
+        filter_recommendations(recommendations, request.args)
+    )
     allocations = db.execute(
         """SELECT a.*, d.food_name, d.category, d.quantity_unit, d.storage_method,
                   d.pickup_start, d.pickup_end, d.pickup_notes, d.packaging,
@@ -817,6 +890,9 @@ def dashboard():
         metrics=recipient_metrics,
         requests=requests,
         recommendations=recommendations,
+        recommendation_total=recommendation_total,
+        recommendation_filters=recommendation_filters,
+        recommendation_categories=recommendation_categories,
         allocations=allocations,
     )
 
@@ -861,7 +937,7 @@ def export_allocations():
     return Response(
         output.getvalue(),
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=foodbridge-allocations.csv"},
+        headers={"Content-Disposition": "attachment; filename=meals-match-allocations.csv"},
     )
 
 

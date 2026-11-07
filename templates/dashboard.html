@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}{{ role|capitalize }} dashboard | FoodBridge{% endblock %}
+{% block title %}{{ role|capitalize }} dashboard | Meals Match{% endblock %}
 {% block content %}
 <section class="page-shell dashboard-shell">
     <div class="dashboard-heading">
         <div>
             <div class="section-label">{{ role|upper }} WORKSPACE</div>
-            <h1>{{ "Good to see you" if role != "admin" else "FoodBridge overview" }}, {{ current_user.name }}.</h1>
+            <h1>{{ "Good to see you" if role != "admin" else "Meals Match overview" }}, {{ current_user.name }}.</h1>
             <p class="form-intro">
                 {% if role == "donor" %}Share surplus food and review suitable requests from people and community organisations.
                 {% elif role == "recipient" %}Request food for yourself, your household, or your organisation, and review suitable food listings.
@@ -67,8 +67,41 @@
             {% endif %}
         </section>
 
-        <section class="content-panel">
-            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Recommended requests</h2></div></div>
+        <section class="content-panel" id="donor-matches">
+            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Recommended requests</h2><p class="panel-caption">Search every eligible request and sort by urgency, quantity, or match score.</p></div></div>
+            <form method="get" class="match-filters" role="search" aria-label="Filter recommended requests">
+                <label>Search
+                    <input type="search" name="q" maxlength="80" value="{{ recommendation_filters.q }}" placeholder="Food, category, recipient, or city">
+                </label>
+                <label>Category
+                    <select name="category">
+                        <option value="">All categories</option>
+                        {% for category in recommendation_categories %}
+                            <option value="{{ category|lower }}" {{ "selected" if recommendation_filters.category == category|lower }}>{{ category }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Storage
+                    <select name="storage">
+                        <option value="">Any storage</option>
+                        {% for value, label in [("ambient", "Ambient"), ("refrigerated", "Refrigerated"), ("frozen", "Frozen")] %}
+                            <option value="{{ value }}" {{ "selected" if recommendation_filters.storage == value }}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Sort by
+                    <select name="sort">
+                        {% for value, label in [("score", "Best match"), ("urgency", "Most urgent"), ("expiring", "Expiring soon"), ("quantity", "Most food")] %}
+                            <option value="{{ value }}" {{ "selected" if recommendation_filters.sort == value }}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <div class="filter-actions">
+                    <button class="small-button" type="submit">Apply filters</button>
+                    <a class="text-button" href="{{ url_for('dashboard') }}#donor-matches">Clear</a>
+                </div>
+            </form>
+            <p class="match-count" role="status">Showing {{ recommendations|length }} of {{ recommendation_total }} eligible matches.</p>
             {% if recommendations %}
             <div class="match-grid">
                 {% for match in recommendations %}
@@ -103,7 +136,14 @@
                 {% endfor %}
             </div>
             {% else %}
-                <div class="empty-state"><p>No eligible requests match your active listings right now.</p></div>
+                <div class="empty-state">
+                    {% if recommendation_total %}
+                        <p>No eligible requests match these filters.</p>
+                        <a href="{{ url_for('dashboard') }}#donor-matches">Clear filters and show all matches</a>
+                    {% else %}
+                        <p>No eligible requests match your active listings right now.</p>
+                    {% endif %}
+                </div>
             {% endif %}
         </section>
 
@@ -152,8 +192,41 @@
             {% else %}<div class="empty-state"><p>No food requests yet.</p><a href="{{ url_for('new_request') }}">Create your first request →</a></div>{% endif %}
         </section>
 
-        <section class="content-panel">
-            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Available food matches</h2></div></div>
+        <section class="content-panel" id="recipient-matches">
+            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Available food matches</h2><p class="panel-caption">Discover every eligible listing for your open requests.</p></div></div>
+            <form method="get" class="match-filters" role="search" aria-label="Filter available food matches">
+                <label>Search
+                    <input type="search" name="q" maxlength="80" value="{{ recommendation_filters.q }}" placeholder="Food, category, donor, or city">
+                </label>
+                <label>Category
+                    <select name="category">
+                        <option value="">All categories</option>
+                        {% for category in recommendation_categories %}
+                            <option value="{{ category|lower }}" {{ "selected" if recommendation_filters.category == category|lower }}>{{ category }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Storage
+                    <select name="storage">
+                        <option value="">Any storage</option>
+                        {% for value, label in [("ambient", "Ambient"), ("refrigerated", "Refrigerated"), ("frozen", "Frozen")] %}
+                            <option value="{{ value }}" {{ "selected" if recommendation_filters.storage == value }}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Sort by
+                    <select name="sort">
+                        {% for value, label in [("score", "Best match"), ("urgency", "Most urgent"), ("expiring", "Expiring soon"), ("quantity", "Most food")] %}
+                            <option value="{{ value }}" {{ "selected" if recommendation_filters.sort == value }}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <div class="filter-actions">
+                    <button class="small-button" type="submit">Apply filters</button>
+                    <a class="text-button" href="{{ url_for('dashboard') }}#recipient-matches">Clear</a>
+                </div>
+            </form>
+            <p class="match-count" role="status">Showing {{ recommendations|length }} of {{ recommendation_total }} eligible matches.</p>
             {% if recommendations %}
             <div class="match-grid">{% for match in recommendations %}
                 <article class="match-card">
@@ -176,7 +249,16 @@
                     </details>
                 </article>
             {% endfor %}</div>
-            {% else %}<div class="empty-state"><p>No suitable food matches your open requests right now.</p></div>{% endif %}
+            {% else %}
+                <div class="empty-state">
+                    {% if recommendation_total %}
+                        <p>No available food matches these filters.</p>
+                        <a href="{{ url_for('dashboard') }}#recipient-matches">Clear filters and show all matches</a>
+                    {% else %}
+                        <p>No suitable food matches your open requests right now.</p>
+                    {% endif %}
+                </div>
+            {% endif %}
         </section>
 
         <section class="content-panel">

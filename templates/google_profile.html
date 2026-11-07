@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Finish your account | FoodBridge{% endblock %}
+{% block title %}Finish your account | Meals Match{% endblock %}
 {% block content %}
 <section class="page-shell auth-shell">
     <div class="auth-card">
         <div class="section-label">GOOGLE SIGN-IN</div>
         <h1>Finish setting up.</h1>
-        <p class="form-intro">Google verified <strong>{{ profile.email }}</strong>. Choose whether to donate or receive food and add your details. Your Google password is never shared with FoodBridge.</p>
+        <p class="form-intro">Google verified <strong>{{ profile.email }}</strong>. Choose whether to donate or receive food and add your details. Your Google password is never shared with Meals Match.</p>
         <form method="post" class="stacked-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <label>Account type
@@ -43,7 +43,7 @@
                 <input type="tel" name="phone" maxlength="40">
                 <small>Shared with the matched participant only after an allocation.</small>
             </label>
-            <button type="submit" class="primary-button form-submit">Create FoodBridge account</button>
+            <button type="submit" class="primary-button form-submit">Create Meals Match account</button>
         </form>
     </div>
 </section>

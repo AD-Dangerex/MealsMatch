@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="FoodBridge connects surplus food with community organisations that need it.">
-    <title>{% block title %}FoodBridge | Food That Finds Its Way{% endblock %}</title>
+    <meta name="description" content="Meals Match connects surplus food with people and organisations who can use it.">
+    <meta name="theme-color" content="#29483A">
+    <title>{% block title %}Meals Match | Good Food, Shared Well{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
@@ -13,7 +14,7 @@
 <body>
 <nav class="navbar">
     <a href="{{ url_for('home') }}" class="logo">
-        <span class="logo-icon">F</span>FoodBridge<span class="logo-dot">.</span>
+        <span class="logo-icon">M</span>Meals Match<span class="logo-dot">.</span>
     </a>
     <div class="nav-links" id="navLinks">
         {% if current_user %}
@@ -66,10 +67,10 @@
 
 <footer class="footer">
     <a href="{{ url_for('home') }}" class="logo footer-logo">
-        <span class="logo-icon">F</span>FoodBridge<span class="logo-dot">.</span>
+        <span class="logo-icon">M</span>Meals Match<span class="logo-dot">.</span>
     </a>
     <p>Making every meal count.</p>
-    <span>© <span id="currentYear"></span> FoodBridge. All rights reserved.</span>
+    <span>© <span id="currentYear"></span> Meals Match. All rights reserved.</span>
 </footer>
 <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>

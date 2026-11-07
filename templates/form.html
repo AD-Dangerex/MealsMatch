@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ "List surplus food" if mode == "donation" else "Create a food request" }} | FoodBridge{% endblock %}
+{% block title %}{{ "List surplus food" if mode == "donation" else "Create a food request" }} | Meals Match{% endblock %}
 {% block content %}
 <section class="page-shell">
     <a class="back-link" href="{{ url_for('dashboard') }}">← Back to dashboard</a>
@@ -68,7 +68,7 @@
                     <input type="checkbox" name="safety_confirmed" value="yes" required {{ "checked" if request.form.get("safety_confirmed") == "yes" }}>
                     <span>I confirm these details are accurate and that this food is handled and offered in accordance with applicable local food-safety requirements.</span>
                 </label>
-                <p class="safety-note">FoodBridge records the donor's declaration; it does not inspect, certify, or guarantee food safety.</p>
+                <p class="safety-note">Meals Match records the donor's declaration; it does not inspect, certify, or guarantee food safety.</p>
             {% else %}
                 <label>Food category
                     <input type="text" name="category" maxlength="60" required value="{{ request.form.get('category', '') }}" placeholder="e.g. vegetables, bakery, dairy">

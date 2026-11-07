@@ -1,6 +1,6 @@
-# FoodBridge
+# Meals Match
 
-FoodBridge is a Flask and SQLite food-sharing application. Individuals and
+Meals Match is a Flask and SQLite food-sharing application. Individuals and
 organisations can publish surplus food or request food, and the matching
 engine ranks eligible donation/request pairs.
 
@@ -32,6 +32,8 @@ Open `http://127.0.0.1:5000`. The app creates its SQLite database in the
   with quantity (25%), food compatibility (20%), city match (20%), timing
   (15%), urgency (10%), and recent allocation fairness (10%). Pickup windows
   must overlap. A dashboard breakdown shows each score component.
+- Search all eligible matches by food, category, participant, or city; filter by
+  category and storage; and sort by match score, urgency, expiry, or quantity.
 - Donors can record and extend partial allocations. Both parties can confirm collection.
 - Admins can review account, allocation, and audit-log information, see
   category-level distribution totals, and download an allocation CSV report.
@@ -42,7 +44,7 @@ to the two participants after an allocation has been recorded. Pickup
 instructions are available to those participants while the allocation is
 pending.
 
-Food safety declarations and listing details are user supplied. FoodBridge does
+Food safety declarations and listing details are user supplied. Meals Match does
 not inspect or certify food; participants must independently check condition,
 allergens, transport, and applicable local requirements.
 
@@ -67,9 +69,9 @@ local testing, also register
 credentials locally. Never commit OAuth secrets.
 
 Google must return a verified email. If that email already belongs to a
-FoodBridge account, the verified Google identity is linked to it; otherwise,
+Meals Match account, the verified Google identity is linked to it; otherwise,
 the user completes a donor or recipient profile. Google passwords are never
-received or stored by FoodBridge.
+received or stored by Meals Match.
 
 Password recovery requires SMTP settings in the deployment environment:
 `SMTP_HOST`, `SMTP_PORT` (usually `587`), `SMTP_USERNAME`, `SMTP_PASSWORD`, and

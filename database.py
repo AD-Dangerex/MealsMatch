@@ -192,7 +192,7 @@ def initialize_database():
                         """INSERT INTO users (name, email, password_hash, role)
                            VALUES (?, ?, ?, 'admin')""",
                         (
-                            "FoodBridge Administrator",
+                            "Meals Match Administrator",
                             admin_email,
                             generate_password_hash(admin_password),
                         ),

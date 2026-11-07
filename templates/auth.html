@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}{{ "Create an account" if mode == "register" else "Log in" }} | FoodBridge{% endblock %}
+{% block title %}{{ "Create an account" if mode == "register" else "Log in" }} | Meals Match{% endblock %}
 {% block content %}
 <section class="page-shell auth-shell">
     <div class="auth-card">
-        <div class="section-label">FOODBRIDGE COMMUNITY</div>
+        <div class="section-label">MEALS MATCH COMMUNITY</div>
         <h1>{{ "Join the connection." if mode == "register" else "Welcome back." }}</h1>
         <p class="form-intro">
             {{ "Create a donor account to share surplus food or a recipient account to request food for yourself, your household, or your organisation." if mode == "register" else "Log in to manage your food listings, requests, and matches." }}
@@ -35,7 +35,7 @@
                         {% endfor %}
                     </select>
                 </label>
-                <label>Choose how you want to use FoodBridge
+                <label>Choose how you want to use Meals Match
                     <select name="role" id="accountRole" required>
                         <option value="recipient" {{ "selected" if request.form.get("role", selected_role) == "recipient" }}>Receive food</option>
                         <option value="donor" {{ "selected" if request.form.get("role", selected_role) == "donor" }}>Donate food</option>
@@ -87,7 +87,7 @@
             {% if mode == "register" %}
                 Already registered? <a href="{{ url_for('login') }}">Log in</a>
             {% else %}
-                New to FoodBridge? <a href="{{ url_for('register') }}">Create an account</a>
+                New to Meals Match? <a href="{{ url_for('register') }}">Create an account</a>
             {% endif %}
         </p>
     </div>

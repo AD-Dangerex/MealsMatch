@@ -1018,6 +1018,74 @@ td {
     margin-top: 9px;
 }
 
+.panel-caption {
+    margin-top: 7px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.match-filters {
+    display: grid;
+    grid-template-columns: minmax(180px, 1.6fr) repeat(3, minmax(130px, 1fr)) auto;
+    align-items: end;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    background: #FBFAF7;
+}
+
+.match-filters label {
+    display: grid;
+    gap: 6px;
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.match-filters input,
+.match-filters select {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    padding: 8px 10px;
+    border: 1px solid #D9D4CA;
+    border-radius: 4px;
+    background: #FFFEFC;
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+}
+
+.match-filters input:focus-visible,
+.match-filters select:focus-visible {
+    outline: 2px solid rgba(41, 72, 58, 0.3);
+    border-color: var(--green);
+}
+
+.filter-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.filter-actions .small-button {
+    min-height: 40px;
+    padding: 0 13px;
+    white-space: nowrap;
+}
+
+.match-count {
+    margin: 13px 0;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+#donor-matches,
+#recipient-matches {
+    scroll-margin-top: 100px;
+}
+
 .match-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
@@ -1572,6 +1640,19 @@ td {
         padding: 18px 14px;
     }
 
+    .match-filters {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .match-filters label:first-child {
+        grid-column: 1 / -1;
+    }
+
+    .filter-actions {
+        grid-column: 1 / -1;
+        justify-content: flex-start;
+    }
+
     .metrics-grid {
         grid-template-columns: repeat(2, 1fr);
     }
@@ -1628,5 +1709,14 @@ td {
     .next-step-actions {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .match-filters {
+        grid-template-columns: 1fr;
+    }
+
+    .match-filters label:first-child,
+    .filter-actions {
+        grid-column: auto;
     }
 }
