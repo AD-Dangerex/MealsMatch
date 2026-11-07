@@ -1,0 +1,254 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>FoodBridge | Food That Finds Its Way</title>
+
+    <meta name="description"
+          content="FoodBridge connects surplus food donors with organisations that need it.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap"
+          rel="stylesheet">
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+<nav class="navbar">
+    <a href="/" class="logo">
+        <span class="logo-icon">F</span>
+        FoodBridge<span class="logo-dot">.</span>
+    </a>
+
+    <div class="nav-links" id="navLinks">
+        <a href="#about">About</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#impact">Our mission</a>
+    </div>
+
+    <div class="nav-actions">
+        <a href="/login" class="login-link">Log in</a>
+        <a href="/register" class="nav-button">Get started ↗</a>
+    </div>
+
+    <button class="menu-toggle" id="menuToggle">☰</button>
+</nav>
+
+<main>
+
+<section class="hero">
+
+    <div class="hero-content">
+        <div class="eyebrow">
+            <span class="eyebrow-dot"></span>
+            FOOD WASTE MEETS FOOD NEED
+        </div>
+
+        <h1>
+            Good food<br>
+            deserves a <em>better</em><br>
+            destination.
+        </h1>
+
+        <p class="hero-description">
+            Every day, perfectly good food goes to waste while
+            communities go without. FoodBridge brings the two
+            together, one meaningful connection at a time.
+        </p>
+
+        <div class="hero-actions">
+            <a href="/register?role=donor" class="primary-button">
+                Donate food <span>↗</span>
+            </a>
+
+            <a href="/register?role=recipient" class="secondary-button">
+                Find food <span>→</span>
+            </a>
+        </div>
+
+        <div class="hero-note">
+            <span class="note-line"></span>
+            A smarter way to share what matters.
+        </div>
+    </div>
+
+    <div class="hero-visual">
+        <div class="image-frame">
+            <img
+                src="https://images.unsplash.com/photo-1547592180-85f173990554?w=1100&q=85"
+                alt="Freshly prepared food ready to be shared">
+
+            <div class="image-overlay"></div>
+
+            <div class="image-caption">
+                <span>THE POWER OF SHARING</span>
+                <strong>Good food should<br>never go to waste.</strong>
+            </div>
+        </div>
+
+        <div class="floating-card">
+            <div class="floating-icon">↗</div>
+            <div>
+                <strong>One connection.</strong>
+                <span>A world of difference.</span>
+            </div>
+        </div>
+
+        <div class="visual-label">01 / A BETTER FOOD SYSTEM</div>
+    </div>
+
+</section>
+
+<section class="ticker">
+    <span>LESS WASTE</span>
+    <span>✳</span>
+    <span>MORE SHARING</span>
+    <span>✳</span>
+    <span>STRONGER COMMUNITIES</span>
+    <span>✳</span>
+    <span>BETTER TOMORROWS</span>
+</section>
+
+<section class="about section" id="about">
+
+    <div class="section-label">01 — WHY FOODBRIDGE</div>
+
+    <div class="about-grid">
+        <h2>
+            There is enough food.<br>
+            We need a better way<br>
+            to <em>connect it.</em>
+        </h2>
+
+        <div class="about-text">
+            <p>
+                Restaurants, schools and catering services often
+                have surplus food at the end of the day. At the
+                same time, charities and community organisations
+                are looking for reliable food supplies.
+            </p>
+
+            <p>
+                FoodBridge creates a direct connection between
+                them, helping surplus food reach people who
+                can use it.
+            </p>
+
+            <a href="#how-it-works" class="text-link">
+                Discover how it works →
+            </a>
+        </div>
+    </div>
+
+</section>
+
+<section class="process-section section" id="how-it-works">
+
+    <div class="section-heading">
+        <div>
+            <div class="section-label">02 — THE PROCESS</div>
+            <h2>Simple connections.<br><em>Real impact.</em></h2>
+        </div>
+
+        <p>
+            From surplus to solution, we make food
+            redistribution easier and more organised.
+        </p>
+    </div>
+
+    <div class="process-grid">
+
+        <article class="process-card">
+            <span class="card-number">01</span>
+            <div class="process-icon">↗</div>
+            <h3>Register & connect</h3>
+            <p>
+                Donors list available food while charities
+                submit requests based on their requirements.
+            </p>
+            <span class="card-footer">DONORS & RECIPIENTS</span>
+        </article>
+
+        <article class="process-card featured-card">
+            <span class="card-number">02</span>
+            <div class="process-icon">⌘</div>
+            <h3>Intelligent matching</h3>
+            <p>
+                Our matching system evaluates quantity,
+                compatibility, distance and urgency.
+            </p>
+            <span class="card-footer">SMART ALLOCATION</span>
+        </article>
+
+        <article class="process-card">
+            <span class="card-number">03</span>
+            <div class="process-icon">✓</div>
+            <h3>Allocate & distribute</h3>
+            <p>
+                Suitable donations are allocated and
+                tracked through the collection process.
+            </p>
+            <span class="card-footer">TRACKED DISTRIBUTION</span>
+        </article>
+
+    </div>
+
+</section>
+
+<section class="mission-section" id="impact">
+
+    <div class="mission-content">
+        <div class="section-label light-label">
+            03 — OUR MISSION
+        </div>
+
+        <h2>
+            Better use of food.<br>
+            Better support for<br>
+            <em>people.</em>
+        </h2>
+
+        <p>
+            We believe technology can help create a more
+            efficient food distribution system by making
+            surplus food easier to discover, match and allocate.
+        </p>
+
+        <a href="/register" class="mission-button">
+            Be part of the change ↗
+        </a>
+    </div>
+
+    <div class="mission-side">
+        <div class="mission-symbol">F.</div>
+        <span>FOODBRIDGE</span>
+        <strong>Connecting resources<br>with real needs.</strong>
+    </div>
+
+</section>
+
+</main>
+
+<footer class="footer">
+    <a href="/" class="logo footer-logo">
+        <span class="logo-icon">F</span>
+        FoodBridge<span class="logo-dot">.</span>
+    </a>
+
+    <p>Making every meal count.</p>
+
+    <span>© <span id="currentYear"></span> FoodBridge. All rights reserved.</span>
+</footer>
+
+<script src="{{ url_for('static', filename='js/script.js') }}"></script>
+
+</body>
+</html>
