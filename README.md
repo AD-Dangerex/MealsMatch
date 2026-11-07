@@ -1,8 +1,8 @@
 # FoodBridge
 
-FoodBridge is a Flask and SQLite food-donation matching application. Donors can
-publish surplus food, recipient organisations can submit requests, and the
-matching engine ranks eligible donation/request pairs.
+FoodBridge is a Flask and SQLite food-sharing application. Individuals and
+organisations can publish surplus food or request food, and the matching
+engine ranks eligible donation/request pairs.
 
 ## Run locally
 
@@ -16,11 +16,12 @@ Open `http://127.0.0.1:5000`. The app creates its SQLite database in the
 
 ## Main workflows
 
-- Register as a donor or recipient; administrator accounts are not publicly
-  self-registerable.
-- Organisation profiles record organisation type, city, and optional phone
-  details. Recipient profiles also record an approximate weekly population
-  supported.
+- Individuals and organisations can register as donors or recipients;
+  administrator accounts are not publicly self-registerable. Each account
+  chooses one role. Individuals can enter their own or household name instead
+  of an organisation name.
+- Profiles record account type, city, and optional phone details. Recipient
+  profiles also record an approximate number of people supported per week.
 - Donors add food listings with quantity units, dietary tags, allergens,
   storage method, packaging, preparation time, pickup window, use-by time, and
   collection notes. Publishing requires a donor handling declaration.
@@ -35,11 +36,11 @@ Open `http://127.0.0.1:5000`. The app creates its SQLite database in the
 - Admins can review account, allocation, and audit-log information, see
   category-level distribution totals, and download an allocation CSV report.
 
-Location matching currently compares the organisations' city names; it does
-not calculate road distance or travel time.
-Contact phone numbers are only shown to the two organisations after an
-allocation has been recorded. Pickup instructions are available to those
-participants while the allocation is pending.
+Location matching currently compares participants' city names; it does not
+calculate road distance or travel time. Contact phone numbers are only shown
+to the two participants after an allocation has been recorded. Pickup
+instructions are available to those participants while the allocation is
+pending.
 
 Food safety declarations and listing details are user supplied. FoodBridge does
 not inspect or certify food; participants must independently check condition,
@@ -67,7 +68,7 @@ credentials locally. Never commit OAuth secrets.
 
 Google must return a verified email. If that email already belongs to a
 FoodBridge account, the verified Google identity is linked to it; otherwise,
-the user completes an organisation profile. Google passwords are never
+the user completes a donor or recipient profile. Google passwords are never
 received or stored by FoodBridge.
 
 ## Deployment and data

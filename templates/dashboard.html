@@ -7,8 +7,8 @@
             <div class="section-label">{{ role|upper }} WORKSPACE</div>
             <h1>{{ "Good to see you" if role != "admin" else "FoodBridge overview" }}, {{ current_user.name }}.</h1>
             <p class="form-intro">
-                {% if role == "donor" %}Share surplus food and review suitable requests from community organisations.
-                {% elif role == "recipient" %}Create a request and review food listings that may meet your needs.
+                {% if role == "donor" %}Share surplus food and review suitable requests from people and community organisations.
+                {% elif role == "recipient" %}Request food for yourself, your household, or your organisation, and review suitable food listings.
                 {% else %}Review platform activity, accounts, and recorded distributions.{% endif %}
             </p>
         </div>
@@ -22,7 +22,7 @@
     {% if role == "donor" %}
         <section class="profile-strip">
             <div class="profile-mark">{{ profile.organization_name[:1]|upper }}</div>
-            <div><span class="section-label">ORGANISATION PROFILE</span>
+            <div><span class="section-label">DONOR PROFILE</span>
                 <strong>{{ profile.organization_name }}</strong>
                 <p>{{ profile.organization_type }} · {{ profile.city }}{% if profile.phone %} · Contact shared after an allocation{% endif %}</p>
             </div>
@@ -124,7 +124,7 @@
     {% elif role == "recipient" %}
         <section class="profile-strip">
             <div class="profile-mark">{{ profile.organization_name[:1]|upper }}</div>
-            <div><span class="section-label">ORGANISATION PROFILE</span>
+            <div><span class="section-label">RECIPIENT PROFILE</span>
                 <strong>{{ profile.organization_name }}</strong>
                 <p>{{ profile.organization_type }} · {{ profile.city }} · typically supports {{ profile.people_served }} people weekly</p>
             </div>

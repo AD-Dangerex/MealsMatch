@@ -7,7 +7,7 @@
         <div class="section-label">{{ "DONOR WORKSPACE" if mode == "donation" else "RECIPIENT WORKSPACE" }}</div>
         <h1>{{ "Share surplus food." if mode == "donation" else "Tell us what you need." }}</h1>
         <p class="form-intro">
-            {{ "Add accurate quantity and expiry details so organisations can find and collect your food." if mode == "donation" else "Describe the food category, quantity, and collection deadline for your organisation." }}
+            {{ "Add accurate quantity and expiry details so potential recipients can find and collect your food." if mode == "donation" else "Describe the food category, quantity, and collection deadline for yourself, your household, or your organisation." }}
         </p>
         <form method="post" class="stacked-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

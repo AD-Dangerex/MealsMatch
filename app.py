@@ -206,12 +206,20 @@ def register():
         phone = request.form.get("phone", "").strip()
         organization_type = request.form.get("organization_type", "").strip()
         allowed_types = {
-            "donor": {"Restaurant", "Grocery store", "Farm", "Caterer", "Other"},
+            "donor": {
+                "Restaurant",
+                "Grocery store",
+                "Farm",
+                "Caterer",
+                "Individual",
+                "Other",
+            },
             "recipient": {
                 "Food bank",
                 "Community kitchen",
                 "Shelter",
                 "School",
+                "Individual",
                 "Other",
             },
         }
@@ -390,12 +398,20 @@ def complete_google_profile():
         city = request.form.get("city", "").strip()
         phone = request.form.get("phone", "").strip()
         allowed_types = {
-            "donor": {"Restaurant", "Grocery store", "Farm", "Caterer", "Other"},
+            "donor": {
+                "Restaurant",
+                "Grocery store",
+                "Farm",
+                "Caterer",
+                "Individual",
+                "Other",
+            },
             "recipient": {
                 "Food bank",
                 "Community kitchen",
                 "Shelter",
                 "School",
+                "Individual",
                 "Other",
             },
         }
@@ -406,9 +422,9 @@ def complete_google_profile():
             people_served = -1
 
         if role not in allowed_types:
-            flash("Choose whether your organisation donates or receives food.", "error")
+            flash("Choose whether you want to donate or receive food.", "error")
         elif not organization or len(organization) > 120 or not city or len(city) > 100:
-            flash("Enter an organisation name and city.", "error")
+            flash("Enter your name or organisation name and city.", "error")
         elif organization_type not in allowed_types[role]:
             flash("Choose a valid organisation type.", "error")
         elif phone and not re.fullmatch(r"[+0-9() .-]{7,40}", phone):

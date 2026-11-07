@@ -5,20 +5,20 @@
     <div class="auth-card">
         <div class="section-label">GOOGLE SIGN-IN</div>
         <h1>Finish setting up.</h1>
-        <p class="form-intro">Google verified <strong>{{ profile.email }}</strong>. Add organisation details to create your FoodBridge account. Your Google password is never shared with FoodBridge.</p>
+        <p class="form-intro">Google verified <strong>{{ profile.email }}</strong>. Choose whether to donate or receive food and add your details. Your Google password is never shared with FoodBridge.</p>
         <form method="post" class="stacked-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <label>Account type
                 <select name="role" id="accountRole" required>
                     <option value="">Choose one</option>
-                    <option value="recipient" {{ "selected" if selected_role == "recipient" }}>Recipient organisation</option>
-                    <option value="donor" {{ "selected" if selected_role == "donor" }}>Food donor</option>
+                    <option value="recipient" {{ "selected" if selected_role == "recipient" }}>Receive food</option>
+                    <option value="donor" {{ "selected" if selected_role == "donor" }}>Donate food</option>
                 </select>
             </label>
-            <label>Organisation
-                <input type="text" name="organization" maxlength="120" required>
+            <label>Your name or organisation
+                <input type="text" name="organization" maxlength="120" placeholder="Your name, household, or organisation" required>
             </label>
-            <label>Organisation type
+            <label>Account type
                 <select name="organization_type" id="organizationType" required>
                     <option value="">Choose one</option>
                     {% for value, audience in [
@@ -26,6 +26,7 @@
                         ("Farm", "donor"), ("Caterer", "donor"),
                         ("Food bank", "recipient"), ("Community kitchen", "recipient"),
                         ("Shelter", "recipient"), ("School", "recipient"),
+                        ("Individual", "both"),
                         ("Other", "both")
                     ] %}
                         <option value="{{ value }}" data-audience="{{ audience }}">{{ value }}</option>
@@ -40,7 +41,7 @@
             </label>
             <label>Contact phone (optional)
                 <input type="tel" name="phone" maxlength="40">
-                <small>Shared only with the other organisation after an allocation.</small>
+                <small>Shared with the matched participant only after an allocation.</small>
             </label>
             <button type="submit" class="primary-button form-submit">Create FoodBridge account</button>
         </form>

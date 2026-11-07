@@ -6,7 +6,7 @@
         <div class="section-label">FOODBRIDGE COMMUNITY</div>
         <h1>{{ "Join the connection." if mode == "register" else "Welcome back." }}</h1>
         <p class="form-intro">
-            {{ "Create an account for your organisation to share food or find support." if mode == "register" else "Log in to manage your food listings, requests, and matches." }}
+            {{ "Create a donor account to share surplus food or a recipient account to request food for yourself, your household, or your organisation." if mode == "register" else "Log in to manage your food listings, requests, and matches." }}
         </p>
         <form method="post" class="stacked-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -14,10 +14,10 @@
                 <label>Your name
                     <input type="text" name="name" maxlength="100" autocomplete="name" required value="{{ request.form.get('name', '') }}">
                 </label>
-                <label>Organisation
-                    <input type="text" name="organization" maxlength="120" required value="{{ request.form.get('organization', '') }}">
+                <label>Your name or organisation
+                    <input type="text" name="organization" maxlength="120" required value="{{ request.form.get('organization', '') }}" placeholder="Your name, household, or organisation">
                 </label>
-                <label>Organisation type
+                <label>Account type
                     <select name="organization_type" id="organizationType" required>
                         <option value="">Choose one</option>
                         {% for value, audience in [
@@ -25,6 +25,7 @@
                             ("Farm", "donor"), ("Caterer", "donor"),
                             ("Food bank", "recipient"), ("Community kitchen", "recipient"),
                             ("Shelter", "recipient"), ("School", "recipient"),
+                            ("Individual", "both"),
                             ("Other", "both")
                         ] %}
                             <option value="{{ value }}" data-audience="{{ audience }}"
@@ -34,10 +35,10 @@
                         {% endfor %}
                     </select>
                 </label>
-                <label>Account type
+                <label>Choose how you want to use FoodBridge
                     <select name="role" id="accountRole" required>
-                        <option value="recipient" {{ "selected" if request.form.get("role", selected_role) == "recipient" }}>Recipient organisation</option>
-                        <option value="donor" {{ "selected" if request.form.get("role", selected_role) == "donor" }}>Food donor</option>
+                        <option value="recipient" {{ "selected" if request.form.get("role", selected_role) == "recipient" }}>Receive food</option>
+                        <option value="donor" {{ "selected" if request.form.get("role", selected_role) == "donor" }}>Donate food</option>
                     </select>
                 </label>
                 <label id="peopleServedField">People typically supported per week
@@ -49,7 +50,7 @@
                 </label>
                 <label>Contact phone (optional)
                     <input type="tel" name="phone" maxlength="40" autocomplete="tel" value="{{ request.form.get('phone', '') }}">
-                    <small>Shared with the other organisation only after an allocation is recorded.</small>
+                    <small>Shared with the matched participant only after an allocation is recorded.</small>
                 </label>
             {% endif %}
             <label>Email
