@@ -18,18 +18,32 @@ Open `http://127.0.0.1:5000`. The app creates its SQLite database in the
 
 - Register as a donor or recipient; administrator accounts are not publicly
   self-registerable.
-- Donors add food listings with a category, quantity, expiry, dietary tags, and
-  allergen information.
-- Recipients submit requests with quantity, dietary requirements, excluded
-  allergens, urgency, and a collection deadline.
+- Organisation profiles record organisation type, city, and optional phone
+  details. Recipient profiles also record an approximate weekly population
+  supported.
+- Donors add food listings with quantity units, dietary tags, allergens,
+  storage method, packaging, preparation time, pickup window, use-by time, and
+  collection notes. Publishing requires a donor handling declaration.
+- Recipients submit requests with quantity units, expected people supported,
+  dietary requirements, excluded allergens, storage preference, urgency,
+  preferred pickup window, deadline, and collection notes.
 - The engine rejects expired or incompatible pairs, then ranks eligible pairs
-  with quantity (25%), compatibility (20%), city match (20%), timing (15%),
-  urgency (10%), and fairness (10%).
+  with quantity (25%), food compatibility (20%), city match (20%), timing
+  (15%), urgency (10%), and recent allocation fairness (10%). Pickup windows
+  must overlap. A dashboard breakdown shows each score component.
 - Donors can record and extend partial allocations. Both parties can confirm collection.
-- Admins can review account, allocation, and audit-log information.
+- Admins can review account, allocation, and audit-log information, see
+  category-level distribution totals, and download an allocation CSV report.
 
 Location matching currently compares the organisations' city names; it does
 not calculate road distance or travel time.
+Contact phone numbers are only shown to the two organisations after an
+allocation has been recorded. Pickup instructions are available to those
+participants while the allocation is pending.
+
+Food safety declarations and listing details are user supplied. FoodBridge does
+not inspect or certify food; participants must independently check condition,
+allergens, transport, and applicable local requirements.
 
 ## Administrator account
 

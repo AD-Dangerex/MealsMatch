@@ -17,14 +17,39 @@
                 <label>Organisation
                     <input type="text" name="organization" maxlength="120" required value="{{ request.form.get('organization', '') }}">
                 </label>
+                <label>Organisation type
+                    <select name="organization_type" id="organizationType" required>
+                        <option value="">Choose one</option>
+                        {% for value, audience in [
+                            ("Restaurant", "donor"), ("Grocery store", "donor"),
+                            ("Farm", "donor"), ("Caterer", "donor"),
+                            ("Food bank", "recipient"), ("Community kitchen", "recipient"),
+                            ("Shelter", "recipient"), ("School", "recipient"),
+                            ("Other", "both")
+                        ] %}
+                            <option value="{{ value }}" data-audience="{{ audience }}"
+                                {{ "selected" if request.form.get("organization_type") == value }}>
+                                {{ value }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </label>
                 <label>Account type
-                    <select name="role" required>
+                    <select name="role" id="accountRole" required>
                         <option value="recipient" {{ "selected" if request.form.get("role", selected_role) == "recipient" }}>Recipient organisation</option>
                         <option value="donor" {{ "selected" if request.form.get("role", selected_role) == "donor" }}>Food donor</option>
                     </select>
                 </label>
+                <label id="peopleServedField">People typically supported per week
+                    <input type="number" name="people_served" min="0" max="1000000" step="1" value="{{ request.form.get('people_served', '0') }}">
+                    <small>Approximate planning figure; it is not shown publicly.</small>
+                </label>
                 <label>City
                     <input type="text" name="city" maxlength="100" autocomplete="address-level2" required value="{{ request.form.get('city', '') }}">
+                </label>
+                <label>Contact phone (optional)
+                    <input type="tel" name="phone" maxlength="40" autocomplete="tel" value="{{ request.form.get('phone', '') }}">
+                    <small>Shared with the other organisation only after an allocation is recorded.</small>
                 </label>
             {% endif %}
             <label>Email

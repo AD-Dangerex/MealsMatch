@@ -20,18 +20,33 @@
     </div>
 
     {% if role == "donor" %}
+        <section class="profile-strip">
+            <div class="profile-mark">{{ profile.organization_name[:1]|upper }}</div>
+            <div><span class="section-label">ORGANISATION PROFILE</span>
+                <strong>{{ profile.organization_name }}</strong>
+                <p>{{ profile.organization_type }} · {{ profile.city }}{% if profile.phone %} · Contact shared after an allocation{% endif %}</p>
+            </div>
+            <div class="profile-private">Private contact details<br>are only shared after matching.</div>
+        </section>
+        <div class="metrics-grid workspace-metrics">
+            {% for label, value in [("Active food listings", metrics.active), ("Recorded allocations", metrics.allocations), ("Confirmed collections", metrics.collected)] %}
+                <article class="metric-card"><span>{{ label }}</span><strong>{{ value }}</strong></article>
+            {% endfor %}
+        </div>
         <section class="content-panel">
             <div class="panel-heading"><div><div class="section-label">YOUR LISTINGS</div><h2>Surplus food</h2></div></div>
             {% if donations %}
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Food</th><th>Category</th><th>Available</th><th>Use by</th><th>Status</th><th></th></tr></thead>
+                    <thead><tr><th>Food</th><th>Category</th><th>Available</th><th>Storage</th><th>Pickup window</th><th>Use by</th><th>Status</th><th></th></tr></thead>
                     <tbody>
                     {% for item in donations %}
                         <tr>
                             <td><strong>{{ item.food_name }}</strong></td>
                             <td>{{ item.category }}</td>
-                            <td>{{ "%.1f"|format(item.remaining_quantity) }} / {{ "%.1f"|format(item.quantity) }} kg</td>
+                            <td>{{ "%.1f"|format(item.remaining_quantity) }} / {{ "%.1f"|format(item.quantity) }} {{ item.quantity_unit }}</td>
+                            <td>{{ item.storage_method|capitalize }}</td>
+                            <td>{{ item.pickup_start|replace("T", " ") }}–{{ item.pickup_end[11:] }}</td>
                             <td>{{ item.expires_at|replace("T", " ") }}</td>
                             <td><span class="status status-{{ item.status }}">{{ item.status|replace("_", " ") }}</span></td>
                             <td>
@@ -59,14 +74,27 @@
                 {% for match in recommendations %}
                 <article class="match-card">
                     <div class="match-top"><span class="match-score">{{ "%.0f"|format(match.score) }}<small>/100</small></span><span class="status status-open">Recommended</span></div>
-                    <h3>{{ match.food_name }} → {{ match.donor_name }}</h3>
-                    <p>{{ match.city }} · {{ match.available_quantity|round(1) }} kg available · {{ match.requested_quantity|round(1) }} kg requested</p>
+                    <h3>{{ match.food_name }} → {{ match.recipient_name }}</h3>
+                    <p>{{ match.recipient_type }} · {{ match.city }}</p>
+                    <p>{{ match.available_quantity|round(1) }} {{ match.quantity_unit }} available · {{ match.requested_quantity|round(1) }} {{ match.quantity_unit }} requested · supports {{ match.people_served }} people</p>
+                    <p>Urgency {{ match.urgency }}/5 · collect by {{ match.collection_deadline|replace("T", " ") }}</p>
+                    <p>Food: {{ match.storage_method }} storage{% if match.packaging %} · {{ match.packaging }}{% endif %}</p>
+                    <p>Dietary needs: {{ match.dietary_requirements or "No specific dietary tags requested" }} · Excluded allergens: {{ match.excluded_allergens or "None listed" }}</p>
+                    {% if match.collection_notes %}<p>Recipient handover needs: {{ match.collection_notes }}</p>{% endif %}
+                    {% if match.pickup_overlap_start %}
+                        <p>Shared pickup window: {{ match.pickup_overlap_start|replace("T", " ") }}–{{ match.pickup_overlap_end[11:] }}</p>
+                    {% endif %}
                     <p class="match-reason">{{ match.explanation }}</p>
+                    <details class="score-breakdown"><summary>See match score breakdown</summary>
+                        {% for key, label in [("quantity", "Quantity"), ("compatibility", "Food compatibility"), ("proximity", "Location"), ("timing", "Timing"), ("urgency", "Urgency"), ("fairness", "Fairness")] %}
+                            <div class="score-row"><span>{{ label }} <b>{{ "%.0f"|format(match.components[key]) }}/100 · +{{ "%.1f"|format(match.weighted_components[key]) }} points</b></span><div class="score-track"><i style="width: {{ match.components[key] }}%"></i></div></div>
+                        {% endfor %}
+                    </details>
                     <form method="post" action="{{ url_for('create_allocation') }}" class="allocation-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="donation_id" value="{{ match.donation_id }}">
                         <input type="hidden" name="request_id" value="{{ match.request_id }}">
-                        <label>Allocate (kg)
+                        <label>Allocate ({{ match.quantity_unit }})
                             <input type="number" name="quantity" min="0.1" max="{{ [match.available_quantity, match.requested_quantity]|min }}" step="0.1" value="{{ [match.available_quantity, match.requested_quantity]|min }}" required>
                         </label>
                         <button class="small-button" type="submit">Record allocation</button>
@@ -85,22 +113,37 @@
             <div class="table-wrap"><table>
                 <thead><tr><th>Food</th><th>Recipient</th><th>Quantity</th><th>Match score</th><th>Status</th><th></th></tr></thead>
                 <tbody>{% for item in allocations %}<tr>
-                    <td>{{ item.food_name }}</td><td>{{ item.partner_name }}</td><td>{{ "%.1f"|format(item.allocated_quantity) }} kg</td>
+                    <td>{{ item.food_name }}</td><td>{{ item.partner_name }}{% if item.status == "pending" and item.partner_phone %}<br><small>Contact: {{ item.partner_phone }}</small>{% endif %}</td><td>{{ "%.1f"|format(item.allocated_quantity) }} {{ item.quantity_unit }}</td>
                     <td>{{ "%.0f"|format(item.match_score) }}/100</td><td><span class="status status-{{ item.status }}">{{ item.status }}</span></td>
-                    <td>{% if item.status == "pending" %}<form method="post" action="{{ url_for('mark_collected', allocation_id=item.id) }}" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-button" type="submit">Mark collected</button></form>{% endif %}</td>
+                    <td>{% if item.status == "pending" %}<details class="pickup-details"><summary>Handover info</summary><p>{{ item.pickup_start|replace("T", " ") }}–{{ item.pickup_end|replace("T", " ") }}</p><p>{{ item.storage_method|capitalize }} · {{ item.packaging or "Packaging not specified" }}</p><p>{{ item.pickup_notes or "No extra pickup instructions." }}</p></details><form method="post" action="{{ url_for('mark_collected', allocation_id=item.id) }}" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-button" type="submit">Mark collected</button></form>{% endif %}</td>
                 </tr>{% endfor %}</tbody>
             </table></div>
             {% else %}<div class="empty-state"><p>Allocations will appear here after you accept a recommended match.</p></div>{% endif %}
         </section>
 
     {% elif role == "recipient" %}
+        <section class="profile-strip">
+            <div class="profile-mark">{{ profile.organization_name[:1]|upper }}</div>
+            <div><span class="section-label">ORGANISATION PROFILE</span>
+                <strong>{{ profile.organization_name }}</strong>
+                <p>{{ profile.organization_type }} · {{ profile.city }} · typically supports {{ profile.people_served }} people weekly</p>
+            </div>
+            <div class="profile-private">Private contact details<br>are only shared after matching.</div>
+        </section>
+        <div class="metrics-grid workspace-metrics">
+            {% for label, value in [("Open requests", metrics.open), ("Recorded allocations", metrics.allocations), ("Confirmed collections", metrics.collected)] %}
+                <article class="metric-card"><span>{{ label }}</span><strong>{{ value }}</strong></article>
+            {% endfor %}
+        </div>
         <section class="content-panel">
             <div class="panel-heading"><div><div class="section-label">YOUR NEEDS</div><h2>Food requests</h2></div></div>
             {% if requests %}
             <div class="table-wrap"><table>
-                <thead><tr><th>Category</th><th>Still needed</th><th>Deadline</th><th>Urgency</th><th>Status</th><th></th></tr></thead>
+                <thead><tr><th>Category</th><th>Still needed</th><th>People served</th><th>Storage</th><th>Pickup window</th><th>Deadline</th><th>Urgency</th><th>Status</th><th></th></tr></thead>
                 <tbody>{% for item in requests %}<tr>
-                    <td><strong>{{ item.category }}</strong></td><td>{{ "%.1f"|format(item.remaining_quantity) }} / {{ "%.1f"|format(item.quantity) }} kg</td>
+                    <td><strong>{{ item.category }}</strong></td><td>{{ "%.1f"|format(item.remaining_quantity) }} / {{ "%.1f"|format(item.quantity) }} {{ item.quantity_unit }}</td>
+                    <td>{{ item.people_served }}</td><td>{{ item.storage_preference|capitalize }}</td>
+                    <td>{{ item.pickup_start|replace("T", " ") }}–{{ item.pickup_end[11:] }}</td>
                     <td>{{ item.collection_deadline|replace("T", " ") }}</td><td>{{ item.urgency }}/5</td>
                     <td><span class="status status-{{ item.status }}">{{ item.status|replace("_", " ") }}</span></td>
                     <td>{% if item.status in ["open", "partially_fulfilled"] %}<form method="post" action="{{ url_for('cancel_request', request_id=item.id) }}" class="inline-form" onsubmit="return confirm('Cancel the outstanding part of this request?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-button" type="submit">Cancel</button></form>{% endif %}</td>
@@ -116,9 +159,21 @@
                 <article class="match-card">
                     <div class="match-top"><span class="match-score">{{ "%.0f"|format(match.score) }}<small>/100</small></span><span class="status status-available">Available</span></div>
                     <h3>{{ match.food_name }}</h3>
-                    <p>{{ match.donor_name }} · {{ match.city }}</p>
-                    <p>{{ match.available_quantity|round(1) }} kg available · your request: {{ match.requested_quantity|round(1) }} kg</p>
+                    <p>{{ match.donor_name }} · {{ match.donor_type }} · {{ match.city }}</p>
+                    <p>{{ match.available_quantity|round(1) }} {{ match.quantity_unit }} available · your request: {{ match.requested_quantity|round(1) }} {{ match.quantity_unit }}</p>
+                    <p>{{ match.storage_method|capitalize }} storage{% if match.packaging %} · {{ match.packaging }}{% endif %}</p>
+                    <p>Prepared: {{ match.prepared_at|replace("T", " ") if match.prepared_at else "Not provided" }} · use by {{ match.expires_at|replace("T", " ") }}</p>
+                    <p>Dietary tags: {{ match.dietary_tags or "None listed" }} · declared allergens: {{ match.allergens or "None listed" }}</p>
+                    <p>Your request is for up to {{ match.people_served }} people</p>
+                    {% if match.pickup_overlap_start %}
+                        <p>Shared pickup window: {{ match.pickup_overlap_start|replace("T", " ") }}–{{ match.pickup_overlap_end[11:] }}</p>
+                    {% endif %}
                     <p class="match-reason">{{ match.explanation }}</p>
+                    <details class="score-breakdown"><summary>See match score breakdown</summary>
+                        {% for key, label in [("quantity", "Quantity"), ("compatibility", "Food compatibility"), ("proximity", "Location"), ("timing", "Timing"), ("urgency", "Urgency"), ("fairness", "Fairness")] %}
+                            <div class="score-row"><span>{{ label }} <b>{{ "%.0f"|format(match.components[key]) }}/100 · +{{ "%.1f"|format(match.weighted_components[key]) }} points</b></span><div class="score-track"><i style="width: {{ match.components[key] }}%"></i></div></div>
+                        {% endfor %}
+                    </details>
                 </article>
             {% endfor %}</div>
             {% else %}<div class="empty-state"><p>No suitable food matches your open requests right now.</p></div>{% endif %}
@@ -130,9 +185,9 @@
             <div class="table-wrap"><table>
                 <thead><tr><th>Food</th><th>Donor</th><th>Quantity</th><th>Score</th><th>Status</th><th></th></tr></thead>
                 <tbody>{% for item in allocations %}<tr>
-                    <td>{{ item.food_name }}</td><td>{{ item.partner_name }}</td><td>{{ "%.1f"|format(item.allocated_quantity) }} kg</td>
+                    <td>{{ item.food_name }}</td><td>{{ item.partner_name }}{% if item.status == "pending" and item.partner_phone %}<br><small>Contact: {{ item.partner_phone }}</small>{% endif %}</td><td>{{ "%.1f"|format(item.allocated_quantity) }} {{ item.quantity_unit }}</td>
                     <td>{{ "%.0f"|format(item.match_score) }}/100</td><td><span class="status status-{{ item.status }}">{{ item.status }}</span></td>
-                    <td>{% if item.status == "pending" %}<form method="post" action="{{ url_for('mark_collected', allocation_id=item.id) }}" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-button" type="submit">Confirm collection</button></form>{% endif %}</td>
+                    <td>{% if item.status == "pending" %}<details class="pickup-details"><summary>Handover info</summary><p>{{ item.pickup_start|replace("T", " ") }}–{{ item.pickup_end|replace("T", " ") }}</p><p>{{ item.storage_method|capitalize }} · {{ item.packaging or "Packaging not specified" }}</p><p>{{ item.pickup_notes or "No extra pickup instructions." }}</p></details><form method="post" action="{{ url_for('mark_collected', allocation_id=item.id) }}" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-button" type="submit">Confirm collection</button></form>{% endif %}</td>
                 </tr>{% endfor %}</tbody>
             </table></div>
             {% else %}<div class="empty-state"><p>Once a donor allocates food to your request, it will appear here.</p></div>{% endif %}
@@ -149,10 +204,17 @@
             <tbody>{% for item in users %}<tr><td>{{ item.name }}</td><td>{{ item.email }}</td><td>{{ item.role }}</td><td>{{ item.created_at }}</td></tr>{% endfor %}</tbody></table></div>
         </section>
         <section class="content-panel">
-            <div class="panel-heading"><div><div class="section-label">DISTRIBUTION</div><h2>Allocations</h2></div></div>
+            <div class="panel-heading"><div><div class="section-label">DISTRIBUTION</div><h2>Allocations</h2></div><a class="small-button" href="{{ url_for('export_allocations') }}">Download CSV report</a></div>
             {% if allocations %}<div class="table-wrap"><table><thead><tr><th>Food</th><th>Donor</th><th>Recipient</th><th>Quantity</th><th>Score</th><th>Status</th></tr></thead>
-            <tbody>{% for item in allocations %}<tr><td>{{ item.food_name }}</td><td>{{ item.donor_name }}</td><td>{{ item.recipient_name }}</td><td>{{ item.allocated_quantity }} kg</td><td>{{ item.match_score }}/100</td><td>{{ item.status }}</td></tr>{% endfor %}</tbody></table></div>
+            <tbody>{% for item in allocations %}<tr><td>{{ item.food_name }}</td><td>{{ item.donor_name }}</td><td>{{ item.recipient_name }}</td><td>{{ item.allocated_quantity }} {{ item.quantity_unit }}</td><td>{{ item.match_score }}/100</td><td>{{ item.status }}</td></tr>{% endfor %}</tbody></table></div>
             {% else %}<div class="empty-state"><p>No allocations recorded yet.</p></div>{% endif %}
+        </section>
+        <section class="content-panel">
+            <div class="panel-heading"><div><div class="section-label">IMPACT REPORT</div><h2>Distribution by category</h2></div></div>
+            {% if category_report %}
+            <div class="table-wrap"><table><thead><tr><th>Category</th><th>Unit</th><th>Allocation records</th><th>Quantity allocated</th><th>Confirmed collections</th></tr></thead>
+            <tbody>{% for item in category_report %}<tr><td>{{ item.category }}</td><td>{{ item.quantity_unit }}</td><td>{{ item.allocations }}</td><td>{{ item.quantity }}</td><td>{{ item.collected or 0 }}</td></tr>{% endfor %}</tbody></table></div>
+            {% else %}<div class="empty-state"><p>Category statistics will appear as food is allocated.</p></div>{% endif %}
         </section>
         <section class="content-panel">
             <div class="panel-heading"><div><div class="section-label">AUDIT TRAIL</div><h2>Recent activity</h2></div></div>

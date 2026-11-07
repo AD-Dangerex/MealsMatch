@@ -18,12 +18,17 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS donors (
     user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    organization_name TEXT NOT NULL
+    organization_name TEXT NOT NULL,
+    organization_type TEXT NOT NULL DEFAULT 'Other',
+    phone TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS recipients (
     user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    organization_name TEXT NOT NULL
+    organization_name TEXT NOT NULL,
+    organization_type TEXT NOT NULL DEFAULT 'Other',
+    people_served INTEGER NOT NULL DEFAULT 0,
+    phone TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS locations (
@@ -44,6 +49,14 @@ CREATE TABLE IF NOT EXISTS donations (
     remaining_quantity REAL NOT NULL CHECK(remaining_quantity >= 0),
     dietary_tags TEXT NOT NULL DEFAULT '',
     allergens TEXT NOT NULL DEFAULT '',
+    quantity_unit TEXT NOT NULL DEFAULT 'kg',
+    storage_method TEXT NOT NULL DEFAULT 'ambient',
+    packaging TEXT NOT NULL DEFAULT '',
+    prepared_at TEXT,
+    pickup_start TEXT,
+    pickup_end TEXT,
+    pickup_notes TEXT NOT NULL DEFAULT '',
+    safety_confirmed INTEGER NOT NULL DEFAULT 0,
     expires_at TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'available'
         CHECK(status IN ('available', 'partially_allocated', 'fully_allocated', 'cancelled')),
@@ -58,8 +71,14 @@ CREATE TABLE IF NOT EXISTS requests (
     remaining_quantity REAL NOT NULL CHECK(remaining_quantity >= 0),
     dietary_requirements TEXT NOT NULL DEFAULT '',
     excluded_allergens TEXT NOT NULL DEFAULT '',
+    quantity_unit TEXT NOT NULL DEFAULT 'kg',
+    storage_preference TEXT NOT NULL DEFAULT 'any',
+    people_served INTEGER NOT NULL DEFAULT 0,
     urgency INTEGER NOT NULL CHECK(urgency BETWEEN 1 AND 5),
+    pickup_start TEXT,
+    pickup_end TEXT,
     collection_deadline TEXT NOT NULL,
+    collection_notes TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'open'
         CHECK(status IN ('open', 'partially_fulfilled', 'fulfilled', 'cancelled')),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -97,6 +116,8 @@ CREATE INDEX IF NOT EXISTS idx_allocations_created
     ON allocations(created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created
     ON audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_users_role
+    ON users(role);
 """
 
 
@@ -125,6 +146,7 @@ def initialize_database():
         try:
             db.execute("PRAGMA foreign_keys = ON")
             db.executescript(SCHEMA)
+            migrate_database(db)
             admin_email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
             admin_password = os.environ.get("ADMIN_PASSWORD", "")
             if admin_email and admin_password:
@@ -144,3 +166,44 @@ def initialize_database():
             db.commit()
         finally:
             db.close()
+
+
+def migrate_database(db):
+    migrations = {
+        "donors": {
+            "organization_type": "TEXT NOT NULL DEFAULT 'Other'",
+            "phone": "TEXT NOT NULL DEFAULT ''",
+        },
+        "recipients": {
+            "organization_type": "TEXT NOT NULL DEFAULT 'Other'",
+            "people_served": "INTEGER NOT NULL DEFAULT 0",
+            "phone": "TEXT NOT NULL DEFAULT ''",
+        },
+        "donations": {
+            "quantity_unit": "TEXT NOT NULL DEFAULT 'kg'",
+            "storage_method": "TEXT NOT NULL DEFAULT 'ambient'",
+            "packaging": "TEXT NOT NULL DEFAULT ''",
+            "prepared_at": "TEXT",
+            "pickup_start": "TEXT",
+            "pickup_end": "TEXT",
+            "pickup_notes": "TEXT NOT NULL DEFAULT ''",
+            "safety_confirmed": "INTEGER NOT NULL DEFAULT 0",
+        },
+        "requests": {
+            "quantity_unit": "TEXT NOT NULL DEFAULT 'kg'",
+            "storage_preference": "TEXT NOT NULL DEFAULT 'any'",
+            "people_served": "INTEGER NOT NULL DEFAULT 0",
+            "pickup_start": "TEXT",
+            "pickup_end": "TEXT",
+            "collection_notes": "TEXT NOT NULL DEFAULT ''",
+        },
+    }
+    for table, columns in migrations.items():
+        existing_columns = {
+            row[1] for row in db.execute(f"PRAGMA table_info({table})")
+        }
+        for column, definition in columns.items():
+            if column not in existing_columns:
+                db.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
+                )

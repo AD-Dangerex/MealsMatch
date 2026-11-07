@@ -1,4 +1,6 @@
 import hmac
+import csv
+import io
 import os
 import re
 import secrets
@@ -6,7 +8,17 @@ import sqlite3
 from datetime import datetime
 from functools import wraps
 
-from flask import Flask, flash, g, redirect, render_template, request, session, url_for
+from flask import (
+    Flask,
+    Response,
+    flash,
+    g,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from allocation import get_recommendations
@@ -88,6 +100,12 @@ def audit(db, user_id, action, entity_type, entity_id, details=""):
     )
 
 
+def csv_safe(value):
+    if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
+
+
 def parse_datetime(value, label):
     try:
         parsed = datetime.fromisoformat(value)
@@ -102,7 +120,20 @@ def parse_datetime(value, label):
 
 @app.route("/")
 def home():
-    return render_template("index.html")
+    db = connect_db()
+    impact_stats = {
+        "completed": db.execute(
+            "SELECT COUNT(*) AS n FROM allocations WHERE status = 'collected'"
+        ).fetchone()["n"],
+        "partners": db.execute(
+            "SELECT COUNT(*) AS n FROM users WHERE role IN ('donor', 'recipient')"
+        ).fetchone()["n"],
+        "active_listings": db.execute(
+            """SELECT COUNT(*) AS n FROM donations
+               WHERE status IN ('available', 'partially_allocated')"""
+        ).fetchone()["n"],
+    }
+    return render_template("index.html", impact_stats=impact_stats)
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -121,6 +152,18 @@ def register():
         password = request.form.get("password", "")
         role = request.form.get("role", "")
         city = request.form.get("city", "").strip()
+        phone = request.form.get("phone", "").strip()
+        organization_type = request.form.get("organization_type", "").strip()
+        allowed_types = {
+            "donor": {"Restaurant", "Grocery store", "Farm", "Caterer", "Other"},
+            "recipient": {
+                "Food bank",
+                "Community kitchen",
+                "Shelter",
+                "School",
+                "Other",
+            },
+        }
 
         if not name or not organization or not city:
             flash("Complete every required field.", "error")
@@ -132,6 +175,10 @@ def register():
             flash("Use a password with at least 10 characters.", "error")
         elif role not in ("donor", "recipient"):
             flash("Choose a valid account type.", "error")
+        elif organization_type not in allowed_types[role]:
+            flash("Choose a valid organisation type.", "error")
+        elif len(phone) > 40 or (phone and not re.fullmatch(r"[+0-9() .-]{7,40}", phone)):
+            flash("Enter a valid contact phone number.", "error")
         else:
             db = connect_db()
             try:
@@ -141,11 +188,23 @@ def register():
                     (name, email, generate_password_hash(password), role),
                 )
                 user_id = cursor.lastrowid
-                profile_table = "donors" if role == "donor" else "recipients"
-                db.execute(
-                    f"INSERT INTO {profile_table} (user_id, organization_name) VALUES (?, ?)",
-                    (user_id, organization),
-                )
+                if role == "donor":
+                    db.execute(
+                        """INSERT INTO donors
+                           (user_id, organization_name, organization_type, phone)
+                           VALUES (?, ?, ?, ?)""",
+                        (user_id, organization, organization_type, phone),
+                    )
+                else:
+                    people_served = int(request.form.get("people_served", "0") or 0)
+                    if not 0 <= people_served <= 1000000:
+                        raise ValueError("Expected people served must be between 0 and 1,000,000.")
+                    db.execute(
+                        """INSERT INTO recipients
+                           (user_id, organization_name, organization_type, people_served, phone)
+                           VALUES (?, ?, ?, ?, ?)""",
+                        (user_id, organization, organization_type, people_served, phone),
+                    )
                 db.execute(
                     "INSERT INTO locations (user_id, city) VALUES (?, ?)",
                     (user_id, city),
@@ -155,6 +214,9 @@ def register():
             except sqlite3.IntegrityError:
                 db.rollback()
                 flash("An account with that email already exists.", "error")
+            except ValueError as error:
+                db.rollback()
+                flash(str(error), "error")
             else:
                 session.clear()
                 session["user_id"] = user_id
@@ -218,7 +280,7 @@ def dashboard():
                FROM users ORDER BY created_at DESC LIMIT 100"""
         ).fetchall()
         allocations = db.execute(
-            """SELECT a.*, d.food_name, donor.organization_name AS donor_name,
+            """SELECT a.*, d.food_name, d.quantity_unit, donor.organization_name AS donor_name,
                       recipient.organization_name AS recipient_name
                FROM allocations a
                JOIN donations d ON d.id = a.donation_id
@@ -232,18 +294,38 @@ def dashboard():
                FROM audit_logs LEFT JOIN users ON users.id = audit_logs.user_id
                ORDER BY audit_logs.created_at DESC LIMIT 50"""
         ).fetchall()
+        category_report = db.execute(
+            """SELECT d.category, d.quantity_unit,
+                      COUNT(a.id) AS allocations,
+                      ROUND(COALESCE(SUM(a.allocated_quantity), 0), 1) AS quantity,
+                      SUM(CASE WHEN a.status = 'collected' THEN 1 ELSE 0 END) AS collected
+               FROM donations d
+               LEFT JOIN allocations a ON a.donation_id = d.id
+               GROUP BY d.category, d.quantity_unit
+               ORDER BY quantity DESC, d.category LIMIT 20"""
+        ).fetchall()
         return render_template(
             "dashboard.html",
             counts=counts,
             users=users,
             allocations=allocations,
             logs=logs,
+            category_report=category_report,
             role="admin",
         )
 
     if user["role"] == "donor":
+        profile = db.execute(
+            """SELECT donors.organization_name, donors.organization_type, donors.phone,
+                      locations.city
+               FROM donors JOIN locations ON locations.user_id = donors.user_id
+               WHERE donors.user_id = ?""",
+            (user["id"],),
+        ).fetchone()
         donations = db.execute(
-            """SELECT * FROM donations WHERE donor_id = ?
+            """SELECT donations.*,
+                      (SELECT COUNT(*) FROM allocations WHERE donation_id = donations.id) AS allocation_count
+               FROM donations WHERE donor_id = ?
                ORDER BY created_at DESC""",
             (user["id"],),
         ).fetchall()
@@ -254,7 +336,10 @@ def dashboard():
                     get_recommendations(db, donation=donation, limit=3)
                 )
         allocations = db.execute(
-            """SELECT a.*, d.food_name, r.category, recipient.organization_name AS partner_name
+            """SELECT a.*, d.food_name, d.quantity_unit, d.storage_method, d.pickup_start,
+                      d.pickup_end, d.pickup_notes, d.packaging,
+                      r.category, recipient.organization_name AS partner_name,
+                      recipient.phone AS partner_phone
                FROM allocations a
                JOIN donations d ON d.id = a.donation_id
                JOIN requests r ON r.id = a.request_id
@@ -262,14 +347,31 @@ def dashboard():
                WHERE d.donor_id = ? ORDER BY a.created_at DESC""",
             (user["id"],),
         ).fetchall()
+        donor_metrics = {
+            "active": sum(
+                item["status"] in ("available", "partially_allocated")
+                for item in donations
+            ),
+            "allocations": len(allocations),
+            "collected": sum(item["status"] == "collected" for item in allocations),
+        }
         return render_template(
             "dashboard.html",
             role="donor",
+            profile=profile,
+            metrics=donor_metrics,
             donations=donations,
             recommendations=recommendations,
             allocations=allocations,
         )
 
+    profile = db.execute(
+        """SELECT recipients.organization_name, recipients.organization_type,
+                  recipients.people_served, recipients.phone, locations.city
+           FROM recipients JOIN locations ON locations.user_id = recipients.user_id
+           WHERE recipients.user_id = ?""",
+        (user["id"],),
+    ).fetchone()
     requests = db.execute(
         """SELECT * FROM requests WHERE recipient_id = ?
            ORDER BY created_at DESC""",
@@ -282,7 +384,9 @@ def dashboard():
                 get_recommendations(db, food_request=food_request, limit=3)
             )
     allocations = db.execute(
-        """SELECT a.*, d.food_name, d.category, donor.organization_name AS partner_name
+        """SELECT a.*, d.food_name, d.category, d.quantity_unit, d.storage_method,
+                  d.pickup_start, d.pickup_end, d.pickup_notes, d.packaging,
+                  donor.organization_name AS partner_name, donor.phone AS partner_phone
            FROM allocations a
            JOIN donations d ON d.id = a.donation_id
            JOIN requests r ON r.id = a.request_id
@@ -290,12 +394,66 @@ def dashboard():
            WHERE r.recipient_id = ? ORDER BY a.created_at DESC""",
         (user["id"],),
     ).fetchall()
+    recipient_metrics = {
+        "open": sum(
+            item["status"] in ("open", "partially_fulfilled")
+            for item in requests
+        ),
+        "allocations": len(allocations),
+        "collected": sum(item["status"] == "collected" for item in allocations),
+    }
     return render_template(
         "dashboard.html",
         role="recipient",
+        profile=profile,
+        metrics=recipient_metrics,
         requests=requests,
         recommendations=recommendations,
         allocations=allocations,
+    )
+
+
+@app.route("/reports/allocations.csv")
+@role_required("admin")
+def export_allocations():
+    db = connect_db()
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "Allocation ID",
+            "Food",
+            "Category",
+            "Donor organisation",
+            "Recipient organisation",
+            "Quantity",
+            "Unit",
+            "Match score",
+            "Status",
+            "Created at",
+            "Collected at",
+            "Match explanation",
+        ]
+    )
+    rows = db.execute(
+        """SELECT a.id, d.food_name, d.category, donor.organization_name,
+                  recipient.organization_name, a.allocated_quantity, d.quantity_unit,
+                  a.match_score, a.status, a.created_at, a.collected_at, a.explanation
+           FROM allocations a
+           JOIN donations d ON d.id = a.donation_id
+           JOIN donors donor ON donor.user_id = d.donor_id
+           JOIN requests r ON r.id = a.request_id
+           JOIN recipients recipient ON recipient.user_id = r.recipient_id
+           ORDER BY a.created_at DESC"""
+    )
+    writer.writerows(
+        [csv_safe(value) for value in row]
+        for row in rows
+    )
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=foodbridge-allocations.csv"},
     )
 
 
@@ -308,26 +466,56 @@ def new_donation():
         category = request.form.get("category", "").strip().lower()
         dietary_tags = request.form.get("dietary_tags", "").strip().lower()
         allergens = request.form.get("allergens", "").strip().lower()
+        quantity_unit = request.form.get("quantity_unit", "")
+        storage_method = request.form.get("storage_method", "")
+        packaging = request.form.get("packaging", "").strip()
+        pickup_notes = request.form.get("pickup_notes", "").strip()
+        prepared_at_value = request.form.get("prepared_at", "").strip()
         try:
             quantity = float(request.form.get("quantity", ""))
             if not 0 < quantity <= 100000 or round(quantity, 1) != quantity:
-                raise ValueError("Quantity must be between 0.1 and 100,000 kg, in 0.1 kg increments.")
+                raise ValueError("Quantity must be between 0.1 and 100,000 units, in 0.1 increments.")
             expires_at = parse_datetime(
                 request.form.get("expires_at", ""), "expiry time"
             )
+            pickup_start = parse_datetime(
+                request.form.get("pickup_start", ""), "pickup window start"
+            )
+            pickup_end = parse_datetime(
+                request.form.get("pickup_end", ""), "pickup window end"
+            )
+            prepared_at = None
+            if prepared_at_value:
+                prepared_at = datetime.fromisoformat(prepared_at_value)
+                if prepared_at.tzinfo is not None or prepared_at > datetime.now():
+                    raise ValueError("Preparation time must be in the past and use local time.")
         except ValueError as error:
             flash(str(error), "error")
         else:
-            if not food_name or not category:
+            if quantity_unit not in {"kg", "portions", "boxes"}:
+                flash("Choose a valid quantity unit.", "error")
+            elif storage_method not in {"ambient", "refrigerated", "frozen"}:
+                flash("Choose a valid storage method.", "error")
+            elif pickup_start >= pickup_end:
+                flash("Pickup window must end after it starts.", "error")
+            elif pickup_end > expires_at:
+                flash("Pickup window must end before the food expires.", "error")
+            elif request.form.get("safety_confirmed") != "yes":
+                flash("Confirm the food handling declaration before publishing.", "error")
+            elif not food_name or not category:
                 flash("Enter a food name and category.", "error")
             elif len(food_name) > 120 or len(category) > 60:
                 flash("Food name or category is too long.", "error")
+            elif len(packaging) > 200 or len(pickup_notes) > 500:
+                flash("Packaging or pickup details are too long.", "error")
             else:
                 cursor = db.execute(
                     """INSERT INTO donations
                        (donor_id, food_name, category, quantity, remaining_quantity,
-                        dietary_tags, allergens, expires_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        dietary_tags, allergens, quantity_unit, storage_method,
+                        packaging, prepared_at, pickup_start, pickup_end,
+                        pickup_notes, safety_confirmed, expires_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         g.user["id"],
                         food_name,
@@ -336,6 +524,14 @@ def new_donation():
                         quantity,
                         dietary_tags,
                         allergens,
+                        quantity_unit,
+                        storage_method,
+                        packaging,
+                        prepared_at.isoformat(timespec="minutes") if prepared_at else None,
+                        pickup_start,
+                        pickup_end,
+                        pickup_notes,
+                        1,
                         expires_at,
                     ),
                 )
@@ -359,29 +555,58 @@ def new_request():
         excluded_allergens = request.form.get(
             "excluded_allergens", ""
         ).strip().lower()
+        quantity_unit = request.form.get("quantity_unit", "")
+        storage_preference = request.form.get("storage_preference", "")
+        collection_notes = request.form.get("collection_notes", "").strip()
         try:
             quantity = float(request.form.get("quantity", ""))
             if not 0 < quantity <= 100000 or round(quantity, 1) != quantity:
-                raise ValueError("Quantity must be between 0.1 and 100,000 kg, in 0.1 kg increments.")
+                raise ValueError("Quantity must be between 0.1 and 100,000 units, in 0.1 increments.")
             deadline = parse_datetime(
                 request.form.get("collection_deadline", ""), "collection deadline"
             )
+            pickup_start = parse_datetime(
+                request.form.get("pickup_start", ""), "preferred pickup start"
+            )
+            pickup_end = parse_datetime(
+                request.form.get("pickup_end", ""), "preferred pickup end"
+            )
             urgency = int(request.form.get("urgency", ""))
+            people_served = int(request.form.get("people_served", ""))
             if urgency not in range(1, 6):
                 raise ValueError("Choose an urgency from 1 (normal) to 5 (critical).")
+            if not 1 <= people_served <= 1000000:
+                raise ValueError("People to support must be between 1 and 1,000,000.")
         except ValueError as error:
             flash(str(error), "error")
         else:
-            if not category:
+            if quantity_unit not in {"kg", "portions", "boxes"}:
+                flash("Choose a valid quantity unit.", "error")
+            elif storage_preference not in {
+                "any",
+                "ambient",
+                "refrigerated",
+                "frozen",
+            }:
+                flash("Choose a valid storage preference.", "error")
+            elif pickup_start >= pickup_end:
+                flash("Preferred pickup window must end after it starts.", "error")
+            elif pickup_end > deadline:
+                flash("Preferred pickup window must end before your collection deadline.", "error")
+            elif not category:
                 flash("Enter a food category.", "error")
             elif len(category) > 60:
                 flash("Food category is too long.", "error")
+            elif len(collection_notes) > 500:
+                flash("Collection notes are too long.", "error")
             else:
                 cursor = db.execute(
                     """INSERT INTO requests
                        (recipient_id, category, quantity, remaining_quantity,
-                        dietary_requirements, excluded_allergens, urgency, collection_deadline)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        dietary_requirements, excluded_allergens, quantity_unit,
+                        storage_preference, people_served, urgency, pickup_start,
+                        pickup_end, collection_deadline, collection_notes)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         g.user["id"],
                         category,
@@ -389,8 +614,14 @@ def new_request():
                         quantity,
                         dietary_requirements,
                         excluded_allergens,
+                        quantity_unit,
+                        storage_preference,
+                        people_served,
                         urgency,
+                        pickup_start,
+                        pickup_end,
                         deadline,
+                        collection_notes,
                     ),
                 )
                 request_id = cursor.lastrowid

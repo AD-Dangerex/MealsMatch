@@ -18,8 +18,16 @@
                 <label>Food category
                     <input type="text" name="category" maxlength="60" required value="{{ request.form.get('category', '') }}" placeholder="e.g. vegetables, bakery, dairy">
                 </label>
-                <label>Quantity (kg)
+                <label>Quantity available
                     <input type="number" name="quantity" min="0.1" max="100000" step="0.1" required value="{{ request.form.get('quantity', '') }}">
+                </label>
+                <label>Quantity unit
+                    <select name="quantity_unit" required>
+                        {% for unit in ["kg", "portions", "boxes"] %}
+                            <option value="{{ unit }}" {{ "selected" if request.form.get("quantity_unit", "kg") == unit }}>{{ unit|capitalize }}</option>
+                        {% endfor %}
+                    </select>
+                    <small>Matches are only compared when both sides use the same unit.</small>
                 </label>
                 <label>Dietary tags
                     <input type="text" name="dietary_tags" value="{{ request.form.get('dietary_tags', '') }}" placeholder="comma-separated, e.g. vegetarian, vegan, gluten-free">
@@ -28,15 +36,55 @@
                 <label>Allergens
                     <input type="text" name="allergens" value="{{ request.form.get('allergens', '') }}" placeholder="comma-separated, e.g. nuts, dairy, wheat">
                 </label>
+                <label>Storage required
+                    <select name="storage_method" required>
+                        {% for value, label in [("ambient", "Ambient / shelf-stable"), ("refrigerated", "Refrigerated"), ("frozen", "Frozen")] %}
+                            <option value="{{ value }}" {{ "selected" if request.form.get("storage_method", "ambient") == value }}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Packaging and condition
+                    <input type="text" name="packaging" maxlength="200" value="{{ request.form.get('packaging', '') }}" placeholder="e.g. Sealed crates; chilled during transport">
+                </label>
+                <label>Prepared / harvested time (optional)
+                    <input type="datetime-local" name="prepared_at" value="{{ request.form.get('prepared_at', '') }}">
+                </label>
+                <div class="form-pair">
+                    <label>Pickup available from
+                        <input type="datetime-local" name="pickup_start" required value="{{ request.form.get('pickup_start', '') }}">
+                    </label>
+                    <label>Pickup available until
+                        <input type="datetime-local" name="pickup_end" required value="{{ request.form.get('pickup_end', '') }}">
+                    </label>
+                </div>
                 <label>Use by / expiry time
                     <input type="datetime-local" name="expires_at" required value="{{ request.form.get('expires_at', '') }}">
                 </label>
+                <label>Pickup instructions
+                    <textarea name="pickup_notes" maxlength="500" rows="3" placeholder="Collection entrance, contact on arrival, or other helpful instructions">{{ request.form.get('pickup_notes', '') }}</textarea>
+                    <small>Visible only to the matched organisation after an allocation is recorded.</small>
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" name="safety_confirmed" value="yes" required {{ "checked" if request.form.get("safety_confirmed") == "yes" }}>
+                    <span>I confirm these details are accurate and that this food is handled and offered in accordance with applicable local food-safety requirements.</span>
+                </label>
+                <p class="safety-note">FoodBridge records the donor's declaration; it does not inspect, certify, or guarantee food safety.</p>
             {% else %}
                 <label>Food category
                     <input type="text" name="category" maxlength="60" required value="{{ request.form.get('category', '') }}" placeholder="e.g. vegetables, bakery, dairy">
                 </label>
-                <label>Quantity needed (kg)
+                <label>Quantity needed
                     <input type="number" name="quantity" min="0.1" max="100000" step="0.1" required value="{{ request.form.get('quantity', '') }}">
+                </label>
+                <label>Quantity unit
+                    <select name="quantity_unit" required>
+                        {% for unit in ["kg", "portions", "boxes"] %}
+                            <option value="{{ unit }}" {{ "selected" if request.form.get("quantity_unit", "kg") == unit }}>{{ unit|capitalize }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>People this request will support
+                    <input type="number" name="people_served" min="1" max="1000000" step="1" required value="{{ request.form.get('people_served', '') }}">
                 </label>
                 <label>Dietary requirements
                     <input type="text" name="dietary_requirements" value="{{ request.form.get('dietary_requirements', '') }}" placeholder="comma-separated, e.g. vegetarian, gluten-free">
@@ -46,6 +94,13 @@
                     <input type="text" name="excluded_allergens" value="{{ request.form.get('excluded_allergens', '') }}" placeholder="comma-separated, e.g. nuts, dairy, wheat">
                     <small>Listings containing any of these allergens will not be recommended.</small>
                 </label>
+                <label>Storage available
+                    <select name="storage_preference" required>
+                        {% for value, label in [("any", "Any storage type"), ("ambient", "Ambient / shelf-stable only"), ("refrigerated", "Refrigerated"), ("frozen", "Frozen")] %}
+                            <option value="{{ value }}" {{ "selected" if request.form.get("storage_preference", "any") == value }}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
                 <label>Urgency
                     <select name="urgency" required>
                         {% for value, label in [(1, "1 — Normal"), (2, "2 — Soon"), (3, "3 — Important"), (4, "4 — Very urgent"), (5, "5 — Critical")] %}
@@ -53,8 +108,19 @@
                         {% endfor %}
                     </select>
                 </label>
+                <div class="form-pair">
+                    <label>Preferred pickup from
+                        <input type="datetime-local" name="pickup_start" required value="{{ request.form.get('pickup_start', '') }}">
+                    </label>
+                    <label>Preferred pickup until
+                        <input type="datetime-local" name="pickup_end" required value="{{ request.form.get('pickup_end', '') }}">
+                    </label>
+                </div>
                 <label>Latest collection time
                     <input type="datetime-local" name="collection_deadline" required value="{{ request.form.get('collection_deadline', '') }}">
+                </label>
+                <label>Collection notes (optional)
+                    <textarea name="collection_notes" maxlength="500" rows="3" placeholder="Accessibility, vehicle, or handover requirements">{{ request.form.get('collection_notes', '') }}</textarea>
                 </label>
             {% endif %}
             <button type="submit" class="primary-button form-submit">{{ "Publish food listing" if mode == "donation" else "Submit food request" }}</button>

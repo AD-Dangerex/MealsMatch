@@ -63,4 +63,85 @@
     </div>
     <div class="mission-side"><div class="mission-symbol">F.</div><span>FOODBRIDGE</span><strong>Connecting resources<br>with real needs.</strong></div>
 </section>
+
+<section class="impact-section section" id="community-impact">
+    <div class="section-label">04 — COMMUNITY ACTIVITY</div>
+    <div class="impact-heading">
+        <h2>Every connection<br>starts with <em>clear information.</em></h2>
+        <p>These figures come from recorded activity on this FoodBridge instance. They are live platform counts, not estimates of meals or food saved.</p>
+    </div>
+    <div class="impact-grid">
+        <article class="impact-card"><span>ORGANISATIONS</span><strong>{{ impact_stats.partners }}</strong><p>Donor and recipient accounts registered.</p></article>
+        <article class="impact-card"><span>ACTIVE LISTINGS</span><strong>{{ impact_stats.active_listings }}</strong><p>Food listings currently available for matching.</p></article>
+        <article class="impact-card"><span>CONFIRMED COLLECTIONS</span><strong>{{ impact_stats.completed }}</strong><p>Allocations marked collected by a participant.</p></article>
+    </div>
+</section>
+
+<section class="matching-section section" id="matching-details">
+    <div class="section-heading">
+        <div><div class="section-label">05 — HOW MATCHING WORKS</div><h2>Eligibility first.<br><em>Then a transparent score.</em></h2></div>
+        <p>Requests and listings must meet essential conditions before any recommendation is shown. The score ranks eligible pairs; it does not guarantee a safe or successful handover.</p>
+    </div>
+    <div class="matching-grid">
+        <article class="matching-card matching-eligibility">
+            <span class="card-number">GATE 01</span><h3>Mandatory eligibility checks</h3>
+            <ul>
+                <li>Food category and quantity unit must match.</li>
+                <li>Food must remain available until the request deadline.</li>
+                <li>Pickup windows must overlap.</li>
+                <li>Dietary needs and excluded allergens are checked against donor-entered details.</li>
+                <li>Required storage must be available to the recipient.</li>
+                <li>The donor must confirm their handling declaration.</li>
+            </ul>
+        </article>
+        <article class="matching-card">
+            <span class="card-number">RANK 02</span><h3>Weighted recommendation score</h3>
+            {% for label, weight, description in [
+                ("Quantity fit", "25%", "How much of the outstanding request can be met."),
+                ("Food compatibility", "20%", "Category, dietary tags, storage, and allergen exclusions."),
+                ("Location", "20%", "A same-city match is prioritised; this is not road distance."),
+                ("Timing", "15%", "Expiry and the overlap between pickup windows."),
+                ("Urgency", "10%", "The recipient's selected urgency level."),
+                ("Fairness", "10%", "Recent allocation history for the recipient.")
+            ] %}
+                <div class="weight-row"><div><strong>{{ label }}</strong><span>{{ weight }}</span></div><p>{{ description }}</p></div>
+            {% endfor %}
+            <p class="matching-caveat">Scores are decision support. Organisations must verify quantities, labels, condition, transport, and applicable local food-safety rules directly.</p>
+        </article>
+    </div>
+</section>
+
+<section class="details-section section" id="listing-details">
+    <div class="section-label">06 — BETTER HANDOVERS</div>
+    <div class="section-heading">
+        <div><h2>Useful details make<br><em>coordination easier.</em></h2></div>
+        <p>Each listing and request captures practical information so organisations can decide whether a match works for them before confirming an allocation.</p>
+    </div>
+    <div class="details-grid">
+        <article class="detail-card"><span>01</span><h3>Food and quantity</h3><p>Category, name, amount, unit, dietary tags, allergen details, and packaging notes make listings more descriptive.</p></article>
+        <article class="detail-card"><span>02</span><h3>Storage and timing</h3><p>Storage method, preparation time, use-by time, and pickup windows help participants assess practical fit.</p></article>
+        <article class="detail-card"><span>03</span><h3>Recipient context</h3><p>Organisation type, expected people supported, dietary needs, storage capacity, and urgency add useful request context.</p></article>
+        <article class="detail-card"><span>04</span><h3>Private contact</h3><p>Phone details are kept off public listings and are shared with the other organisation only after an allocation.</p></article>
+    </div>
+    <div class="safety-banner">
+        <strong>Important: FoodBridge is a coordination tool, not a food-safety authority.</strong>
+        <p>Food details and handling declarations are supplied by users. The platform does not inspect, test, certify, or guarantee food. Donors and recipients remain responsible for checking condition, traceability, allergens, storage, transport, and local legal requirements before a handover.</p>
+    </div>
+</section>
+
+<section class="faq-section section" id="questions">
+    <div class="section-label">07 — COMMON QUESTIONS</div>
+    <h2>Clear expectations.<br><em>Better collaboration.</em></h2>
+    <div class="faq-grid">
+        <details><summary>Who can create an account?</summary><p>Food donors and recipient organisations can register. Admin accounts are created separately by the site operator and cannot be selected in public registration.</p></details>
+        <details><summary>How are recommendations ranked?</summary><p>Ineligible pairs are removed first. Eligible matches receive a weighted score based on quantity, compatibility, city, timing, urgency, and recent allocation history. Open “See match score breakdown” in a dashboard to inspect a specific result.</p></details>
+        <details><summary>Does a high score mean the food is safe?</summary><p>No. A score reflects only the data entered into the system. It is not a safety inspection or certification, and the participating organisations must verify all details themselves.</p></details>
+        <details><summary>How are quantities and privacy handled?</summary><p>Matching compares like units only. Public pages show aggregate platform counts; contact numbers and pickup instructions are restricted to participants in a recorded allocation.</p></details>
+    </div>
+</section>
+
+<section class="next-step">
+    <div><div class="section-label light-label">MAKE THE CONNECTION</div><h2>Share what you can.<br>Request what you need.</h2><p>Start with a clear listing or a practical request, then review the match details together.</p></div>
+    <div class="next-step-actions"><a class="mission-button" href="{{ url_for('register', role='donor') }}">Register as a donor ↗</a><a class="mission-button outline-button" href="{{ url_for('register', role='recipient') }}">Register as a recipient →</a></div>
+</section>
 {% endblock %}

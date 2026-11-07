@@ -18,11 +18,14 @@
     <div class="nav-links" id="navLinks">
         {% if current_user %}
             <a href="{{ url_for('dashboard') }}">Dashboard</a>
-            <a href="{{ url_for('home') }}#how-it-works">How it works</a>
+            <a href="{{ url_for('home') }}#matching-details">Matching</a>
+            <a href="{{ url_for('home') }}#community-impact">Impact</a>
+            <a href="{{ url_for('home') }}#questions">FAQ</a>
         {% else %}
             <a href="{{ url_for('home') }}#about">About</a>
-            <a href="{{ url_for('home') }}#how-it-works">How it works</a>
-            <a href="{{ url_for('home') }}#impact">Our mission</a>
+            <a href="{{ url_for('home') }}#matching-details">Matching</a>
+            <a href="{{ url_for('home') }}#community-impact">Impact</a>
+            <a href="{{ url_for('home') }}#questions">FAQ</a>
         {% endif %}
         {% if current_user %}
             <form method="post" action="{{ url_for('logout') }}" class="nav-mobile-only">
