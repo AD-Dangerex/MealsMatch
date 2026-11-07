@@ -782,6 +782,31 @@ em {
     font-weight: 700;
 }
 
+.auth-recovery {
+    display: grid;
+    gap: 7px;
+    margin-top: 16px;
+    text-align: center;
+    font-size: 13px;
+}
+
+.auth-recovery a {
+    color: var(--green);
+    font-weight: 700;
+}
+
+.auth-recovery span {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.auth-recovery a:focus-visible,
+.auth-switch a:focus-visible {
+    outline: 2px solid var(--green);
+    outline-offset: 3px;
+}
+
 .auth-divider {
     display: flex;
     align-items: center;

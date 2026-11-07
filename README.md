@@ -71,6 +71,16 @@ FoodBridge account, the verified Google identity is linked to it; otherwise,
 the user completes a donor or recipient profile. Google passwords are never
 received or stored by FoodBridge.
 
+Password recovery requires SMTP settings in the deployment environment:
+`SMTP_HOST`, `SMTP_PORT` (usually `587`), `SMTP_USERNAME`, `SMTP_PASSWORD`, and
+`SMTP_FROM`. Set `PUBLIC_BASE_URL` to the canonical site origin if Render does
+not provide `RENDER_EXTERNAL_HOSTNAME`. Configure mail settings as private
+Render environment variables; never commit mail credentials. For Gmail, use
+an app password, not your Google account password. Reset links expire after
+30 minutes and can only be used once. If mail is not configured, users can
+sign in with Google if their account is linked, or contact the site
+administrator.
+
 ## Deployment and data
 
 `render.yaml` configures the Docker web service, a persistent Render disk at
@@ -78,8 +88,10 @@ received or stored by FoodBridge.
 `SESSION_SECRET`. A persistent disk requires a paid Render service plan and
 continues to incur its applicable costs. If the existing service was created
 manually, ensure its settings include the persistent disk mount and database
-path; pushing this Blueprint file alone may not change a manually configured
-service.
+path, and a stable `SESSION_SECRET`; pushing this Blueprint file alone may not
+change a manually configured service. On Render, the app now refuses to start
+without `DATABASE_PATH` rather than silently creating accounts on temporary
+storage.
 
 When the disk is mounted, the app attempts to copy an existing
 `instance/foodbridge.db` into it the first time, before applying schema

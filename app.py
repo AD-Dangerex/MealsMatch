@@ -1,11 +1,15 @@
 import csv
+import hashlib
 import hmac
 import io
 import os
 import re
 import secrets
 import sqlite3
-from datetime import datetime
+import smtplib
+import ssl
+from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
 
@@ -169,6 +173,38 @@ def parse_datetime(value, label):
     return parsed.isoformat(timespec="minutes")
 
 
+def send_password_reset_email(email, reset_url):
+    settings = {
+        "host": os.environ.get("SMTP_HOST", "").strip(),
+        "username": os.environ.get("SMTP_USERNAME", "").strip(),
+        "password": os.environ.get("SMTP_PASSWORD", ""),
+        "sender": os.environ.get("SMTP_FROM", "").strip(),
+    }
+    if not all(settings.values()):
+        return False
+
+    try:
+        port = int(os.environ.get("SMTP_PORT", "587"))
+        message = EmailMessage()
+        message["Subject"] = "Reset your FoodBridge password"
+        message["From"] = settings["sender"]
+        message["To"] = email
+        message.set_content(
+            "We received a request to reset your FoodBridge password.\n\n"
+            f"Use this secure link within 30 minutes:\n{reset_url}\n\n"
+            "If you did not request this, you can ignore this email."
+        )
+        with smtplib.SMTP(settings["host"], port, timeout=15) as mail_server:
+            mail_server.starttls(context=ssl.create_default_context())
+            mail_server.login(settings["username"], settings["password"])
+            mail_server.send_message(message)
+    except (OSError, smtplib.SMTPException, ValueError):
+        app.logger.exception("Could not send FoodBridge password reset email")
+        return False
+
+    return True
+
+
 @app.route("/")
 def home():
     db = connect_db()
@@ -306,6 +342,144 @@ def login():
             return redirect(url_for("dashboard"))
 
     return render_template("auth.html", mode="login", selected_role="recipient")
+
+
+@app.route("/password-reset", methods=["GET", "POST"])
+def request_password_reset():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        if not email or len(email) > 254:
+            flash("Enter the email address used for your account.", "error")
+            return render_template("password_reset_request.html")
+
+        db = connect_db()
+        user = db.execute(
+            "SELECT id, email FROM users WHERE email = ?", (email,)
+        ).fetchone()
+        smtp_is_configured = all(
+            os.environ.get(key, "").strip()
+            for key in ("SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM")
+        )
+        if not smtp_is_configured:
+            flash(
+                "Password recovery is not available on this site yet. "
+                "Use Google sign-in if you linked it to your account, or contact the site administrator.",
+                "error",
+            )
+        else:
+            if user is not None:
+                recent_reset = db.execute(
+                    """SELECT 1 FROM password_reset_tokens
+                       WHERE user_id = ? AND created_at >= datetime('now', '-15 minutes')
+                       LIMIT 1""",
+                    (user["id"],),
+                ).fetchone()
+                if recent_reset is None:
+                    token = secrets.token_urlsafe(32)
+                    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+                    expires_at = (
+                        datetime.now(timezone.utc) + timedelta(minutes=30)
+                    ).isoformat(timespec="seconds")
+                    db.execute(
+                        """INSERT INTO password_reset_tokens
+                           (user_id, token_hash, expires_at)
+                           VALUES (?, ?, ?)""",
+                        (user["id"], token_hash, expires_at),
+                    )
+                    db.commit()
+                    public_base_url = os.environ.get("PUBLIC_BASE_URL", "").strip()
+                    if not public_base_url:
+                        render_hostname = os.environ.get(
+                            "RENDER_EXTERNAL_HOSTNAME", ""
+                        ).strip()
+                        public_base_url = (
+                            f"https://{render_hostname}"
+                            if render_hostname
+                            else request.url_root.rstrip("/")
+                        )
+                    reset_url = (
+                        f"{public_base_url.rstrip('/')}"
+                        f"{url_for('reset_password', token=token)}"
+                    )
+                    if not send_password_reset_email(user["email"], reset_url):
+                        db.execute(
+                            "DELETE FROM password_reset_tokens WHERE token_hash = ?",
+                            (token_hash,),
+                        )
+                        db.commit()
+
+            flash(
+                "If an account uses that email, password reset instructions will be sent shortly.",
+                "success",
+            )
+        return render_template("password_reset_request.html")
+
+    return render_template("password_reset_request.html")
+
+
+@app.route("/password-reset/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    if not token or len(token) > 128:
+        flash("That password reset link is invalid or has expired.", "error")
+        return redirect(url_for("request_password_reset"))
+
+    db = connect_db()
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    reset_record = db.execute(
+        """SELECT id, user_id, token_hash FROM password_reset_tokens
+           WHERE token_hash = ? AND used_at IS NULL
+             AND datetime(expires_at) > CURRENT_TIMESTAMP""",
+        (token_hash,),
+    ).fetchone()
+    if reset_record is None:
+        flash("That password reset link is invalid or has expired.", "error")
+        return redirect(url_for("request_password_reset"))
+
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        confirm_password = request.form.get("confirm_password", "")
+        if len(password) < 10:
+            flash("Use a password with at least 10 characters.", "error")
+        elif password != confirm_password:
+            flash("The passwords do not match.", "error")
+        else:
+            try:
+                db.execute("BEGIN IMMEDIATE")
+                current = db.execute(
+                    """SELECT id FROM password_reset_tokens
+                       WHERE id = ? AND used_at IS NULL
+                         AND datetime(expires_at) > CURRENT_TIMESTAMP""",
+                    (reset_record["id"],),
+                ).fetchone()
+                if current is None:
+                    raise ValueError("That password reset link has already been used.")
+                db.execute(
+                    "UPDATE users SET password_hash = ? WHERE id = ?",
+                    (generate_password_hash(password), reset_record["user_id"]),
+                )
+                db.execute(
+                    """UPDATE password_reset_tokens
+                       SET used_at = CURRENT_TIMESTAMP
+                       WHERE user_id = ? AND used_at IS NULL""",
+                    (reset_record["user_id"],),
+                )
+                audit(
+                    db,
+                    reset_record["user_id"],
+                    "password_reset",
+                    "user",
+                    reset_record["user_id"],
+                )
+                db.commit()
+            except ValueError as error:
+                db.rollback()
+                flash(str(error), "error")
+                return redirect(url_for("request_password_reset"))
+
+            flash("Your password has been updated. You can now log in.", "success")
+            return redirect(url_for("login"))
+
+    return render_template("password_reset_form.html")
 
 
 @app.get("/auth/google")

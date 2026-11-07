@@ -109,6 +109,15 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_donations_status_category
     ON donations(status, category);
 CREATE INDEX IF NOT EXISTS idx_requests_status_category
@@ -117,6 +126,8 @@ CREATE INDEX IF NOT EXISTS idx_allocations_created
     ON allocations(created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created
     ON audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_password_reset_user_created
+    ON password_reset_tokens(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_users_role
     ON users(role);
 """
@@ -124,6 +135,10 @@ CREATE INDEX IF NOT EXISTS idx_users_role
 
 def database_path():
     configured = os.environ.get("DATABASE_PATH")
+    if os.environ.get("RENDER") and not configured:
+        raise RuntimeError(
+            "DATABASE_PATH must point to a database on the Render persistent disk."
+        )
     if configured:
         path = Path(configured)
     else:

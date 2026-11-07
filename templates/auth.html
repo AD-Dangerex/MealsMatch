@@ -77,6 +77,12 @@
                 </a>
             {% endif %}
         {% endif %}
+        {% if mode == "login" %}
+            <p class="auth-recovery">
+                <a href="{{ url_for('request_password_reset') }}">Forgot your password?</a>
+                <span>Use Google sign-in if you originally connected your account with Google.</span>
+            </p>
+        {% endif %}
         <p class="auth-switch">
             {% if mode == "register" %}
                 Already registered? <a href="{{ url_for('login') }}">Log in</a>
