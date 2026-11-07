@@ -782,6 +782,51 @@ em {
     font-weight: 700;
 }
 
+.auth-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 22px 0 15px;
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: "";
+    height: 1px;
+    flex: 1;
+    background: var(--border);
+}
+
+.google-button {
+    min-height: 46px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    border: 1px solid #D9D4CA;
+    border-radius: 4px;
+    background: white;
+    color: #333A34;
+    font-size: 13px;
+    font-weight: 600;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.google-button:hover {
+    background: #FBFAF7;
+    border-color: #A7AA9E;
+}
+
+.google-mark {
+    font-family: Arial, sans-serif;
+    font-size: 19px;
+    font-weight: 700;
+    color: #4285F4;
+}
+
 .back-link {
     display: inline-block;
     font-size: 13px;

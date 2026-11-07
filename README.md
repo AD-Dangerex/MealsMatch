@@ -52,13 +52,40 @@ Create the first administrator by setting both `ADMIN_EMAIL` and
 hash. Do not use a public or shared default password. For Render, add these as
 secret environment variables in the service settings and redeploy.
 
+## Google sign-in
+
+Google sign-in is optional and appears when both `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET` are configured. Create a Google OAuth client of type
+**Web application** and register the exact redirect URI:
+
+`https://YOUR-RENDER-SERVICE.onrender.com/auth/google/callback`
+
+Add the client ID and secret privately as Render environment variables. For
+local testing, also register
+`http://127.0.0.1:5000/auth/google/callback` with the OAuth client and set its
+credentials locally. Never commit OAuth secrets.
+
+Google must return a verified email. If that email already belongs to a
+FoodBridge account, the verified Google identity is linked to it; otherwise,
+the user completes an organisation profile. Google passwords are never
+received or stored by FoodBridge.
+
 ## Deployment and data
 
-`render.yaml` configures a Python web service and generates a `SESSION_SECRET`.
-The included `Dockerfile` can also be used for a Docker-based Render service.
-Set a stable, private `SESSION_SECRET` when deploying manually.
+`render.yaml` configures the Docker web service, a persistent Render disk at
+`/var/data`, SQLite at `/var/data/foodbridge.db`, and a generated stable
+`SESSION_SECRET`. A persistent disk requires a paid Render service plan and
+continues to incur its applicable costs. If the existing service was created
+manually, ensure its settings include the persistent disk mount and database
+path; pushing this Blueprint file alone may not change a manually configured
+service.
 
-SQLite is suitable for a school project and a single-instance demonstration.
-Render's local filesystem may be replaced during redeploys or instance
-restarts; configure persistent storage or use a managed database before relying
-on this deployment for durable real-world records.
+When the disk is mounted, the app attempts to copy an existing
+`instance/foodbridge.db` into it the first time, before applying schema
+migrations. If the old instance data has already been deleted, it cannot be
+recovered and affected users must create accounts again. Locally, the database
+and generated session key are stored under `instance/`.
+
+Passwords are stored as salted Werkzeug password hashes, not plaintext. If
+login fails after deployment, check whether the service is still using the
+same persistent database file.

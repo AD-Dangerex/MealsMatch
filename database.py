@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
     name TEXT NOT NULL CHECK(length(name) <= 100),
     email TEXT NOT NULL UNIQUE COLLATE NOCASE,
     password_hash TEXT NOT NULL,
+    google_sub TEXT UNIQUE,
     role TEXT NOT NULL CHECK(role IN ('donor', 'recipient', 'admin')),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -128,6 +129,20 @@ def database_path():
     else:
         path = Path(current_app.instance_path) / "foodbridge.db"
     path.parent.mkdir(parents=True, exist_ok=True)
+    legacy_path = Path(current_app.instance_path) / "foodbridge.db"
+    if (
+        configured
+        and not path.exists()
+        and legacy_path.exists()
+        and path.resolve() != legacy_path.resolve()
+    ):
+        legacy_db = sqlite3.connect(legacy_path, timeout=10)
+        persistent_db = sqlite3.connect(path, timeout=10)
+        try:
+            legacy_db.backup(persistent_db)
+        finally:
+            legacy_db.close()
+            persistent_db.close()
     return path
 
 
@@ -147,6 +162,10 @@ def initialize_database():
             db.execute("PRAGMA foreign_keys = ON")
             db.executescript(SCHEMA)
             migrate_database(db)
+            db.execute(
+                """CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub
+                   ON users(google_sub) WHERE google_sub IS NOT NULL"""
+            )
             admin_email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
             admin_password = os.environ.get("ADMIN_PASSWORD", "")
             if admin_email and admin_password:
@@ -170,6 +189,9 @@ def initialize_database():
 
 def migrate_database(db):
     migrations = {
+        "users": {
+            "google_sub": "TEXT",
+        },
         "donors": {
             "organization_type": "TEXT NOT NULL DEFAULT 'Other'",
             "phone": "TEXT NOT NULL DEFAULT ''",

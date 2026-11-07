@@ -1,5 +1,5 @@
-import hmac
 import csv
+import hmac
 import io
 import os
 import re
@@ -7,7 +7,10 @@ import secrets
 import sqlite3
 from datetime import datetime
 from functools import wraps
+from pathlib import Path
 
+from authlib.integrations.base_client.errors import OAuthError
+from authlib.integrations.flask_client import OAuth
 from flask import (
     Flask,
     Response,
@@ -19,6 +22,7 @@ from flask import (
     session,
     url_for,
 )
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from allocation import get_recommendations
@@ -27,11 +31,54 @@ from database import connect_db, initialize_database
 
 app = Flask(__name__)
 app.config.update(
-    SECRET_KEY=os.environ.get("SESSION_SECRET") or secrets.token_hex(32),
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=bool(os.environ.get("RENDER")),
+    GOOGLE_CLIENT_ID=os.environ.get("GOOGLE_CLIENT_ID"),
+    GOOGLE_CLIENT_SECRET=os.environ.get("GOOGLE_CLIENT_SECRET"),
 )
+def load_session_secret():
+    configured_secret = os.environ.get("SESSION_SECRET")
+    if configured_secret:
+        if len(configured_secret) < 32:
+            raise RuntimeError("SESSION_SECRET must contain at least 32 characters.")
+        return configured_secret
+
+    configured_secret_file = os.environ.get("SESSION_SECRET_FILE")
+    if configured_secret_file:
+        secret_file = Path(configured_secret_file)
+    elif os.environ.get("DATABASE_PATH"):
+        secret_file = Path(os.environ["DATABASE_PATH"]).parent / ".session_secret"
+    else:
+        secret_file = Path(app.instance_path) / ".session_secret"
+    secret_file.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with secret_file.open("x", encoding="utf-8") as secret_stream:
+            secret_stream.write(secrets.token_urlsafe(48))
+    except FileExistsError:
+        pass
+
+    persistent_secret = secret_file.read_text(encoding="utf-8").strip()
+    if len(persistent_secret) < 32:
+        raise RuntimeError(f"Session secret file {secret_file} is invalid.")
+    return persistent_secret
+
+
+app.config["SECRET_KEY"] = load_session_secret()
+if os.environ.get("RENDER"):
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+oauth = OAuth(app)
+google_client = None
+if app.config["GOOGLE_CLIENT_ID"] and app.config["GOOGLE_CLIENT_SECRET"]:
+    google_client = oauth.register(
+        name="google",
+        client_id=app.config["GOOGLE_CLIENT_ID"],
+        client_secret=app.config["GOOGLE_CLIENT_SECRET"],
+        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+        client_kwargs={"scope": "openid email profile"},
+    )
+
 with app.app_context():
     initialize_database()
 
@@ -71,7 +118,11 @@ def inject_template_helpers():
             session["csrf_token"] = secrets.token_urlsafe(32)
         return session["csrf_token"]
 
-    return {"csrf_token": csrf_token, "current_user": g.get("user")}
+    return {
+        "csrf_token": csrf_token,
+        "current_user": g.get("user"),
+        "google_login_enabled": google_client is not None,
+    }
 
 
 def role_required(*roles):
@@ -247,6 +298,173 @@ def login():
             return redirect(url_for("dashboard"))
 
     return render_template("auth.html", mode="login", selected_role="recipient")
+
+
+@app.get("/auth/google")
+def google_login():
+    if google_client is None:
+        flash("Google sign-in is not configured yet.", "error")
+        return redirect(url_for("login"))
+    role = request.args.get("role", "")
+    session["google_signup_role"] = role if role in ("donor", "recipient") else ""
+    callback_url = url_for("google_callback", _external=True)
+    return google_client.authorize_redirect(callback_url)
+
+
+@app.get("/auth/google/callback")
+def google_callback():
+    if google_client is None:
+        flash("Google sign-in is not configured yet.", "error")
+        return redirect(url_for("login"))
+
+    try:
+        token = google_client.authorize_access_token()
+    except OAuthError:
+        app.logger.warning("Google sign-in was cancelled or could not be completed")
+        flash("Google sign-in could not be completed. Please try again.", "error")
+        return redirect(url_for("login"))
+
+    profile = token.get("userinfo")
+    if not profile:
+        app.logger.warning("Google sign-in did not return verified profile information")
+        flash("Google did not provide account information. Please try again.", "error")
+        return redirect(url_for("login"))
+
+    google_sub = profile.get("sub")
+    email = str(profile.get("email", "")).strip().lower()
+    name = str(profile.get("name", "")).strip()
+    if (
+        not google_sub
+        or not email
+        or len(email) > 254
+        or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
+        or profile.get("email_verified") is not True
+    ):
+        flash("Google must provide a verified email address to sign in.", "error")
+        return redirect(url_for("login"))
+
+    db = connect_db()
+    user = db.execute(
+        "SELECT id, email FROM users WHERE google_sub = ?", (google_sub,)
+    ).fetchone()
+    if user is None:
+        user = db.execute(
+            "SELECT id, google_sub FROM users WHERE email = ?", (email,)
+        ).fetchone()
+        if user is not None:
+            if user["google_sub"] not in (None, google_sub):
+                flash("That email is linked to a different Google account.", "error")
+                return redirect(url_for("login"))
+            db.execute(
+                "UPDATE users SET google_sub = ? WHERE id = ?",
+                (google_sub, user["id"]),
+            )
+            audit(db, user["id"], "linked", "google_account", user["id"])
+            db.commit()
+
+    if user is not None:
+        session.clear()
+        session["user_id"] = user["id"]
+        flash("You are now signed in with Google.", "success")
+        return redirect(url_for("dashboard"))
+
+    session["pending_google_profile"] = {
+        "sub": google_sub,
+        "email": email,
+        "name": name[:100] or email.split("@", 1)[0][:100],
+    }
+    return redirect(url_for("complete_google_profile"))
+
+
+@app.route("/auth/google/complete", methods=["GET", "POST"])
+def complete_google_profile():
+    profile = session.get("pending_google_profile")
+    if not profile:
+        flash("Start Google sign-in to create your account.", "error")
+        return redirect(url_for("register"))
+
+    if request.method == "POST":
+        role = request.form.get("role", "")
+        organization = request.form.get("organization", "").strip()
+        organization_type = request.form.get("organization_type", "").strip()
+        city = request.form.get("city", "").strip()
+        phone = request.form.get("phone", "").strip()
+        allowed_types = {
+            "donor": {"Restaurant", "Grocery store", "Farm", "Caterer", "Other"},
+            "recipient": {
+                "Food bank",
+                "Community kitchen",
+                "Shelter",
+                "School",
+                "Other",
+            },
+        }
+
+        try:
+            people_served = int(request.form.get("people_served", "0") or 0)
+        except ValueError:
+            people_served = -1
+
+        if role not in allowed_types:
+            flash("Choose whether your organisation donates or receives food.", "error")
+        elif not organization or len(organization) > 120 or not city or len(city) > 100:
+            flash("Enter an organisation name and city.", "error")
+        elif organization_type not in allowed_types[role]:
+            flash("Choose a valid organisation type.", "error")
+        elif phone and not re.fullmatch(r"[+0-9() .-]{7,40}", phone):
+            flash("Enter a valid contact phone number.", "error")
+        elif role == "recipient" and not 0 <= people_served <= 1000000:
+            flash("People supported must be between 0 and 1,000,000.", "error")
+        else:
+            db = connect_db()
+            try:
+                cursor = db.execute(
+                    """INSERT INTO users (name, email, password_hash, google_sub, role)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (
+                        profile["name"],
+                        profile["email"],
+                        generate_password_hash(secrets.token_urlsafe(48)),
+                        profile["sub"],
+                        role,
+                    ),
+                )
+                user_id = cursor.lastrowid
+                if role == "donor":
+                    db.execute(
+                        """INSERT INTO donors
+                           (user_id, organization_name, organization_type, phone)
+                           VALUES (?, ?, ?, ?)""",
+                        (user_id, organization, organization_type, phone),
+                    )
+                else:
+                    db.execute(
+                        """INSERT INTO recipients
+                           (user_id, organization_name, organization_type, people_served, phone)
+                           VALUES (?, ?, ?, ?, ?)""",
+                        (user_id, organization, organization_type, people_served, phone),
+                    )
+                db.execute(
+                    "INSERT INTO locations (user_id, city) VALUES (?, ?)",
+                    (user_id, city),
+                )
+                audit(db, user_id, "registered_with_google", "user", user_id)
+                db.commit()
+            except sqlite3.IntegrityError:
+                db.rollback()
+                flash("An account with that email already exists. Try signing in again.", "error")
+                return redirect(url_for("login"))
+
+            session.clear()
+            session["user_id"] = user_id
+            flash("Your FoodBridge account is ready.", "success")
+            return redirect(url_for("dashboard"))
+
+    return render_template(
+        "google_profile.html",
+        profile=profile,
+        selected_role=session.get("google_signup_role", ""),
+    )
 
 
 @app.post("/logout")
