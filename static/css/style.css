@@ -1137,6 +1137,11 @@ td {
     margin-top: 12px;
 }
 
+.match-card .route-distance {
+    color: var(--green);
+    font-weight: 700;
+}
+
 .allocation-form {
     border-top: 1px solid var(--border);
     margin-top: 14px;

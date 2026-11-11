@@ -2,16 +2,17 @@ import csv
 import hashlib
 import hmac
 import io
+import math
 import os
 import re
 import secrets
-import sqlite3
 import smtplib
 import ssl
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.flask_client import OAuth
@@ -30,14 +31,24 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from allocation import get_recommendations
-from database import connect_db, initialize_database
+from geo import MapServiceError, geocode_address
+from database import (
+    DATABASE_ERRORS,
+    INTEGRITY_ERRORS,
+    connect_db,
+    initialize_database,
+)
 
 
 app = Flask(__name__)
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=bool(os.environ.get("RENDER")),
+    SESSION_COOKIE_SECURE=os.environ.get(
+        "SESSION_COOKIE_SECURE",
+        "1" if os.environ.get("RAILWAY_ENVIRONMENT") else "",
+    ).strip().lower()
+    in {"1", "true", "yes", "on"},
     GOOGLE_CLIENT_ID=os.environ.get("GOOGLE_CLIENT_ID"),
     GOOGLE_CLIENT_SECRET=os.environ.get("GOOGLE_CLIENT_SECRET"),
 )
@@ -48,19 +59,16 @@ def load_session_secret():
             raise RuntimeError("SESSION_SECRET must contain at least 32 characters.")
         return configured_secret
 
+    if os.environ.get("RAILWAY_ENVIRONMENT"):
+        raise RuntimeError(
+            "Set a stable SESSION_SECRET in the deployment environment."
+        )
+
     configured_secret_file = os.environ.get("SESSION_SECRET_FILE")
     if configured_secret_file:
         secret_file = Path(configured_secret_file)
     elif os.environ.get("DATABASE_PATH"):
         secret_file = Path(os.environ["DATABASE_PATH"]).parent / ".session_secret"
-    elif os.environ.get("RENDER"):
-        persistent_mount = Path("/var/data")
-        if not persistent_mount.is_mount():
-            raise RuntimeError(
-                "Meals Match needs a Render persistent disk mounted at /var/data "
-                "to keep sessions stable across restarts."
-            )
-        secret_file = persistent_mount / ".session_secret"
     else:
         secret_file = Path(app.instance_path) / ".session_secret"
     secret_file.parent.mkdir(parents=True, exist_ok=True)
@@ -77,10 +85,35 @@ def load_session_secret():
 
 
 app.config["SECRET_KEY"] = load_session_secret()
-if os.environ.get("RENDER"):
+if os.environ.get("RAILWAY_ENVIRONMENT"):
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 oauth = OAuth(app)
+
+
+def public_base_url():
+    configured_url = os.environ.get("PUBLIC_BASE_URL", "").strip()
+    if configured_url:
+        parsed_url = urlsplit(
+            configured_url if "://" in configured_url else f"https://{configured_url}"
+        )
+        if parsed_url.netloc:
+            scheme = (
+                "https"
+                if os.environ.get("RAILWAY_ENVIRONMENT")
+                else parsed_url.scheme
+            )
+            return f"{scheme}://{parsed_url.netloc}"
+        raise RuntimeError("PUBLIC_BASE_URL must contain a valid hostname.")
+    if os.environ.get("RAILWAY_ENVIRONMENT"):
+        return f"https://{request.host}"
+    return request.url_root.rstrip("/")
+
+
+def google_redirect_uri():
+    return "https://cs-ia-website-production.up.railway.app/auth/google/callback"
+
+
 google_client = None
 if app.config["GOOGLE_CLIENT_ID"] and app.config["GOOGLE_CLIENT_SECRET"]:
     google_client = oauth.register(
@@ -163,6 +196,12 @@ def audit(db, user_id, action, entity_type, entity_id, details=""):
     )
 
 
+def select_for_update(db, query, parameters):
+    if getattr(db, "is_postgres", False):
+        query = query.rstrip().rstrip(";") + " FOR UPDATE"
+    return db.execute(query, parameters)
+
+
 def csv_safe(value):
     if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")):
         return "'" + value
@@ -174,10 +213,17 @@ def filter_recommendations(recommendations, query):
     category = query.get("category", "").strip().casefold()[:60]
     storage = query.get("storage", "").strip()
     sort = query.get("sort", "score").strip()
+    distance_filter = query.get("max_distance", "").strip()
     if storage not in {"ambient", "refrigerated", "frozen"}:
         storage = ""
-    if sort not in {"score", "expiring", "urgency", "quantity"}:
+    if sort not in {"score", "expiring", "urgency", "quantity", "distance"}:
         sort = "score"
+    try:
+        distance_filter = float(distance_filter)
+        if not math.isfinite(distance_filter) or not 1 <= distance_filter <= 250:
+            distance_filter = None
+    except ValueError:
+        distance_filter = None
 
     categories = sorted({item["category"].title() for item in recommendations})
     filtered = [
@@ -185,6 +231,11 @@ def filter_recommendations(recommendations, query):
         for item in recommendations
         if (not category or item["category"].casefold() == category)
         and (not storage or item["storage_method"] == storage)
+        and (
+            distance_filter is None
+            or item["distance_km"] is None
+            or item["distance_km"] <= distance_filter
+        )
         and (
             not search
             or search
@@ -221,6 +272,11 @@ def filter_recommendations(recommendations, query):
             -item["score"],
             item["food_name"].casefold(),
         ),
+        "distance": lambda item: (
+            item["distance_km"] is None,
+            item["distance_km"] if item["distance_km"] is not None else math.inf,
+            -item["score"],
+        ),
     }
     filtered.sort(key=sort_keys[sort])
     return filtered, {
@@ -228,6 +284,7 @@ def filter_recommendations(recommendations, query):
         "category": category,
         "storage": storage,
         "sort": sort,
+        "max_distance": distance_filter,
     }, categories
 
 
@@ -349,10 +406,10 @@ def register():
             try:
                 cursor = db.execute(
                     """INSERT INTO users (name, email, password_hash, role)
-                       VALUES (?, ?, ?, ?)""",
+                       VALUES (?, ?, ?, ?) RETURNING id""",
                     (name, email, generate_password_hash(password), role),
                 )
-                user_id = cursor.lastrowid
+                user_id = cursor.fetchone()["id"]
                 if role == "donor":
                     db.execute(
                         """INSERT INTO donors
@@ -376,7 +433,7 @@ def register():
                 )
                 audit(db, user_id, "registered", "user", user_id)
                 db.commit()
-            except sqlite3.IntegrityError:
+            except INTEGRITY_ERRORS:
                 db.rollback()
                 flash("An account with that email already exists.", "error")
             except ValueError as error:
@@ -457,18 +514,8 @@ def request_password_reset():
                         (user["id"], token_hash, expires_at),
                     )
                     db.commit()
-                    public_base_url = os.environ.get("PUBLIC_BASE_URL", "").strip()
-                    if not public_base_url:
-                        render_hostname = os.environ.get(
-                            "RENDER_EXTERNAL_HOSTNAME", ""
-                        ).strip()
-                        public_base_url = (
-                            f"https://{render_hostname}"
-                            if render_hostname
-                            else request.url_root.rstrip("/")
-                        )
                     reset_url = (
-                        f"{public_base_url.rstrip('/')}"
+                        f"{public_base_url()}"
                         f"{url_for('reset_password', token=token)}"
                     )
                     if not send_password_reset_email(user["email"], reset_url):
@@ -559,8 +606,7 @@ def google_login():
         return redirect(url_for("login"))
     role = request.args.get("role", "")
     session["google_signup_role"] = role if role in ("donor", "recipient") else ""
-    callback_url = url_for("google_callback", _external=True)
-    return google_client.authorize_redirect(callback_url)
+    return google_client.authorize_redirect(google_redirect_uri())
 
 
 @app.get("/auth/google/callback")
@@ -680,7 +726,7 @@ def complete_google_profile():
             try:
                 cursor = db.execute(
                     """INSERT INTO users (name, email, password_hash, google_sub, role)
-                       VALUES (?, ?, ?, ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?) RETURNING id""",
                     (
                         profile["name"],
                         profile["email"],
@@ -689,7 +735,7 @@ def complete_google_profile():
                         role,
                     ),
                 )
-                user_id = cursor.lastrowid
+                user_id = cursor.fetchone()["id"]
                 if role == "donor":
                     db.execute(
                         """INSERT INTO donors
@@ -710,7 +756,7 @@ def complete_google_profile():
                 )
                 audit(db, user_id, "registered_with_google", "user", user_id)
                 db.commit()
-            except sqlite3.IntegrityError:
+            except INTEGRITY_ERRORS:
                 db.rollback()
                 flash("An account with that email already exists. Try signing in again.", "error")
                 return redirect(url_for("login"))
@@ -808,19 +854,29 @@ def dashboard():
             (user["id"],),
         ).fetchall()
         recommendations = []
+        route_errors = []
         for donation in donations:
             if donation["status"] in ("available", "partially_allocated"):
                 recommendations.extend(
-                    get_recommendations(db, donation=donation)
+                    get_recommendations(
+                        db, donation=donation, route_errors=route_errors
+                    )
                 )
+        if route_errors:
+            flash(
+                "Some distances could not be calculated because the map service "
+                "is temporarily unavailable. Those matches were not shown.",
+                "error",
+            )
         recommendation_total = len(recommendations)
         recommendations, recommendation_filters, recommendation_categories = (
             filter_recommendations(recommendations, request.args)
         )
         allocations = db.execute(
             """SELECT a.*, d.food_name, d.quantity_unit, d.storage_method, d.pickup_start,
-                      d.pickup_end, d.pickup_notes, d.packaging,
-                      r.category, recipient.organization_name AS partner_name,
+                      d.pickup_end, d.pickup_notes, d.packaging, d.pickup_address,
+                      r.category, r.collection_address,
+                      recipient.organization_name AS partner_name,
                       recipient.phone AS partner_phone
                FROM allocations a
                JOIN donations d ON d.id = a.donation_id
@@ -863,11 +919,22 @@ def dashboard():
         (user["id"],),
     ).fetchall()
     recommendations = []
+    route_errors = []
     for food_request in requests:
         if food_request["status"] in ("open", "partially_fulfilled"):
             recommendations.extend(
-                get_recommendations(db, food_request=food_request)
+                get_recommendations(
+                    db,
+                    food_request=food_request,
+                    route_errors=route_errors,
+                )
             )
+    if route_errors:
+        flash(
+            "Some distances could not be calculated because the map service "
+            "is temporarily unavailable. Those matches were not shown.",
+            "error",
+        )
     recommendation_total = len(recommendations)
     recommendations, recommendation_filters, recommendation_categories = (
         filter_recommendations(recommendations, request.args)
@@ -875,6 +942,7 @@ def dashboard():
     allocations = db.execute(
         """SELECT a.*, d.food_name, d.category, d.quantity_unit, d.storage_method,
                   d.pickup_start, d.pickup_end, d.pickup_notes, d.packaging,
+                  d.pickup_address, r.collection_address,
                   donor.organization_name AS partner_name, donor.phone AS partner_phone
            FROM allocations a
            JOIN donations d ON d.id = a.donation_id
@@ -962,6 +1030,8 @@ def new_donation():
         storage_method = request.form.get("storage_method", "")
         packaging = request.form.get("packaging", "").strip()
         pickup_notes = request.form.get("pickup_notes", "").strip()
+        pickup_address = request.form.get("pickup_address", "").strip()
+        location_consent = request.form.get("location_consent") == "yes"
         prepared_at_value = request.form.get("prepared_at", "").strip()
         try:
             quantity = float(request.form.get("quantity", ""))
@@ -1000,38 +1070,60 @@ def new_donation():
                 flash("Food name or category is too long.", "error")
             elif len(packaging) > 200 or len(pickup_notes) > 500:
                 flash("Packaging or pickup details are too long.", "error")
+            elif not pickup_address or len(pickup_address) > 300:
+                flash("Enter a pickup address no longer than 300 characters.", "error")
+            elif not location_consent:
+                flash("Confirm the location-sharing notice before publishing.", "error")
             else:
-                cursor = db.execute(
-                    """INSERT INTO donations
-                       (donor_id, food_name, category, quantity, remaining_quantity,
-                        dietary_tags, allergens, quantity_unit, storage_method,
-                        packaging, prepared_at, pickup_start, pickup_end,
-                        pickup_notes, safety_confirmed, expires_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
+                try:
+                    coordinates = geocode_address(pickup_address)
+                except MapServiceError as error:
+                    flash(str(error), "error")
+                else:
+                    cursor = db.execute(
+                        """INSERT INTO donations
+                           (donor_id, food_name, category, quantity, remaining_quantity,
+                            dietary_tags, allergens, quantity_unit, storage_method,
+                            packaging, prepared_at, pickup_start, pickup_end,
+                            pickup_notes, pickup_address, pickup_latitude,
+                            pickup_longitude, location_consent, safety_confirmed, expires_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           RETURNING id""",
+                        (
+                            g.user["id"],
+                            food_name,
+                            category,
+                            quantity,
+                            quantity,
+                            dietary_tags,
+                            allergens,
+                            quantity_unit,
+                            storage_method,
+                            packaging,
+                            prepared_at.isoformat(timespec="minutes") if prepared_at else None,
+                            pickup_start,
+                            pickup_end,
+                            pickup_notes,
+                            pickup_address,
+                            coordinates.latitude,
+                            coordinates.longitude,
+                            1,
+                            1,
+                            expires_at,
+                        ),
+                    )
+                    donation_id = cursor.fetchone()["id"]
+                    audit(
+                        db,
                         g.user["id"],
+                        "created",
+                        "donation",
+                        donation_id,
                         food_name,
-                        category,
-                        quantity,
-                        quantity,
-                        dietary_tags,
-                        allergens,
-                        quantity_unit,
-                        storage_method,
-                        packaging,
-                        prepared_at.isoformat(timespec="minutes") if prepared_at else None,
-                        pickup_start,
-                        pickup_end,
-                        pickup_notes,
-                        1,
-                        expires_at,
-                    ),
-                )
-                donation_id = cursor.lastrowid
-                audit(db, g.user["id"], "created", "donation", donation_id, food_name)
-                db.commit()
-                flash("Your food listing has been added.", "success")
-                return redirect(url_for("dashboard"))
+                    )
+                    db.commit()
+                    flash("Your food listing has been added.", "success")
+                    return redirect(url_for("dashboard"))
     return render_template("form.html", mode="donation")
 
 
@@ -1050,6 +1142,8 @@ def new_request():
         quantity_unit = request.form.get("quantity_unit", "")
         storage_preference = request.form.get("storage_preference", "")
         collection_notes = request.form.get("collection_notes", "").strip()
+        collection_address = request.form.get("collection_address", "").strip()
+        location_consent = request.form.get("location_consent") == "yes"
         try:
             quantity = float(request.form.get("quantity", ""))
             if not 0 < quantity <= 100000 or round(quantity, 1) != quantity:
@@ -1065,10 +1159,13 @@ def new_request():
             )
             urgency = int(request.form.get("urgency", ""))
             people_served = int(request.form.get("people_served", ""))
+            max_distance_km = float(request.form.get("max_distance_km", "25"))
             if urgency not in range(1, 6):
                 raise ValueError("Choose an urgency from 1 (normal) to 5 (critical).")
             if not 1 <= people_served <= 1000000:
                 raise ValueError("People to support must be between 1 and 1,000,000.")
+            if not math.isfinite(max_distance_km) or not 1 <= max_distance_km <= 250:
+                raise ValueError("Maximum travel distance must be between 1 and 250 km.")
         except ValueError as error:
             flash(str(error), "error")
         else:
@@ -1091,36 +1188,53 @@ def new_request():
                 flash("Food category is too long.", "error")
             elif len(collection_notes) > 500:
                 flash("Collection notes are too long.", "error")
+            elif not collection_address or len(collection_address) > 300:
+                flash("Enter a collection address no longer than 300 characters.", "error")
+            elif not location_consent:
+                flash("Confirm the location-sharing notice before submitting.", "error")
             else:
-                cursor = db.execute(
-                    """INSERT INTO requests
-                       (recipient_id, category, quantity, remaining_quantity,
-                        dietary_requirements, excluded_allergens, quantity_unit,
-                        storage_preference, people_served, urgency, pickup_start,
-                        pickup_end, collection_deadline, collection_notes)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        g.user["id"],
-                        category,
-                        quantity,
-                        quantity,
-                        dietary_requirements,
-                        excluded_allergens,
-                        quantity_unit,
-                        storage_preference,
-                        people_served,
-                        urgency,
-                        pickup_start,
-                        pickup_end,
-                        deadline,
-                        collection_notes,
-                    ),
-                )
-                request_id = cursor.lastrowid
-                audit(db, g.user["id"], "created", "request", request_id, category)
-                db.commit()
-                flash("Your food request has been added.", "success")
-                return redirect(url_for("dashboard"))
+                try:
+                    coordinates = geocode_address(collection_address)
+                except MapServiceError as error:
+                    flash(str(error), "error")
+                else:
+                    cursor = db.execute(
+                        """INSERT INTO requests
+                           (recipient_id, category, quantity, remaining_quantity,
+                            dietary_requirements, excluded_allergens, quantity_unit,
+                            storage_preference, people_served, urgency, pickup_start,
+                            pickup_end, collection_deadline, collection_notes,
+                            collection_address, collection_latitude, collection_longitude,
+                            max_distance_km, location_consent)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           RETURNING id""",
+                        (
+                            g.user["id"],
+                            category,
+                            quantity,
+                            quantity,
+                            dietary_requirements,
+                            excluded_allergens,
+                            quantity_unit,
+                            storage_preference,
+                            people_served,
+                            urgency,
+                            pickup_start,
+                            pickup_end,
+                            deadline,
+                            collection_notes,
+                            collection_address,
+                            coordinates.latitude,
+                            coordinates.longitude,
+                            max_distance_km,
+                            1,
+                        ),
+                    )
+                    request_id = cursor.fetchone()["id"]
+                    audit(db, g.user["id"], "created", "request", request_id, category)
+                    db.commit()
+                    flash("Your food request has been added.", "success")
+                    return redirect(url_for("dashboard"))
     return render_template("form.html", mode="request")
 
 
@@ -1140,13 +1254,14 @@ def create_allocation():
     db = connect_db()
     try:
         db.execute("BEGIN IMMEDIATE")
-        donation = db.execute(
+        donation = select_for_update(
+            db,
             """SELECT * FROM donations
                WHERE id = ? AND donor_id = ?""",
             (donation_id, g.user["id"]),
         ).fetchone()
-        food_request = db.execute(
-            "SELECT * FROM requests WHERE id = ?", (request_id,)
+        food_request = select_for_update(
+            db, "SELECT * FROM requests WHERE id = ?", (request_id,)
         ).fetchone()
         if donation is None or food_request is None:
             raise ValueError("The selected food or request is no longer available.")
@@ -1159,10 +1274,17 @@ def create_allocation():
         ]:
             raise ValueError("Quantity exceeds the available food or outstanding request.")
 
+        route_errors = []
         recommendations = get_recommendations(
-            db, donation=donation, food_request=food_request
+            db,
+            donation=donation,
+            food_request=food_request,
+            route_errors=route_errors,
+            cache_routes=False,
         )
         if not recommendations:
+            if route_errors:
+                raise route_errors[0]
             raise ValueError("This food is not eligible for the selected request.")
         recommendation = recommendations[0]
         existing = db.execute(
@@ -1225,7 +1347,14 @@ def create_allocation():
         db.rollback()
         flash(str(error), "error")
         return redirect(url_for("dashboard"))
-    except sqlite3.Error:
+    except MapServiceError as error:
+        db.rollback()
+        flash(
+            f"The allocation could not be verified because routing failed: {error}",
+            "error",
+        )
+        return redirect(url_for("dashboard"))
+    except DATABASE_ERRORS:
         db.rollback()
         app.logger.exception("Could not save food allocation")
         flash("The allocation could not be saved. Please try again.", "error")

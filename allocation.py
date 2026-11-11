@@ -1,4 +1,7 @@
+import hashlib
 from datetime import datetime
+
+from geo import Coordinates, MapServiceError, get_road_route
 
 
 WEIGHTS = {
@@ -19,7 +22,63 @@ def parse_time(value):
     return datetime.fromisoformat(value)
 
 
-def score_match(db, donation, food_request):
+def route_distance(db, donation, food_request, cache_routes=True):
+    values = (
+        donation["pickup_latitude"],
+        donation["pickup_longitude"],
+        food_request["collection_latitude"],
+        food_request["collection_longitude"],
+    )
+    if any(value is None for value in values):
+        return None
+
+    origin = Coordinates(float(values[0]), float(values[1]))
+    destination = Coordinates(float(values[2]), float(values[3]))
+    origin_key = hashlib.sha256(
+        f"{origin.latitude:.5f},{origin.longitude:.5f}".encode("ascii")
+    ).hexdigest()
+    destination_key = hashlib.sha256(
+        f"{destination.latitude:.5f},{destination.longitude:.5f}".encode("ascii")
+    ).hexdigest()
+    cached = db.execute(
+        """SELECT distance_meters, duration_seconds FROM route_distance_cache
+           WHERE origin_key = ? AND destination_key = ?
+             AND calculated_at >= datetime('now', '-30 days')""",
+        (origin_key, destination_key),
+    ).fetchone()
+    if cached is not None:
+        return {
+            "distance_meters": cached["distance_meters"],
+            "duration_seconds": cached["duration_seconds"],
+        }
+
+    route = get_road_route(origin, destination)
+    if route is None:
+        return None
+    if cache_routes:
+        db.execute(
+            """INSERT INTO route_distance_cache
+               (origin_key, destination_key, distance_meters, duration_seconds)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT (origin_key, destination_key) DO UPDATE SET
+                   distance_meters = excluded.distance_meters,
+                   duration_seconds = excluded.duration_seconds,
+                   calculated_at = CURRENT_TIMESTAMP""",
+            (
+                origin_key,
+                destination_key,
+                route.distance_meters,
+                route.duration_seconds,
+            ),
+        )
+        db.commit()
+    return {
+        "distance_meters": route.distance_meters,
+        "duration_seconds": route.duration_seconds,
+    }
+
+
+def score_match(db, donation, food_request, cache_routes=True):
     if donation["status"] not in ("available", "partially_allocated"):
         return None
     if not donation["safety_confirmed"]:
@@ -80,25 +139,30 @@ def score_match(db, donation, food_request):
     if not dietary_needs.issubset(donated_tags) or excluded_allergens.intersection(allergens):
         return None
 
+    route = route_distance(db, donation, food_request, cache_routes=cache_routes)
+    has_coordinates = all(
+        value is not None
+        for value in (
+            donation["pickup_latitude"],
+            donation["pickup_longitude"],
+            food_request["collection_latitude"],
+            food_request["collection_longitude"],
+        )
+    )
+    if not has_coordinates or route is None:
+        return None
+    distance_km = route["distance_meters"] / 1000 if route else None
+    max_distance_km = float(food_request["max_distance_km"] or 25)
+    if distance_km is not None and distance_km > max_distance_km:
+        return None
+
     quantity_score = min(
         100.0,
         donation["remaining_quantity"] / food_request["remaining_quantity"] * 100,
     )
     compatibility_score = 100.0
-    donor_city = db.execute(
-        "SELECT city FROM locations WHERE user_id = ?",
-        (donation["donor_id"],),
-    ).fetchone()
-    recipient_city = db.execute(
-        "SELECT city FROM locations WHERE user_id = ?",
-        (food_request["recipient_id"],),
-    ).fetchone()
-    proximity_score = (
-        100.0
-        if donor_city
-        and recipient_city
-        and donor_city["city"].casefold() == recipient_city["city"].casefold()
-        else 35.0
+    proximity_score = max(
+        0.0, 100.0 * (1.0 - distance_km / max_distance_km)
     )
 
     hours_after_deadline = max(0.0, (expires_at - deadline).total_seconds() / 3600)
@@ -129,11 +193,13 @@ def score_match(db, donation, food_request):
     weighted_components = {
         key: round(components[key] * WEIGHTS[key], 2) for key in WEIGHTS
     }
+    location_explanation = (
+        f"road route {distance_km:.1f} km (limit {max_distance_km:g} km)"
+    )
     explanation = (
         f"Category, quantity unit, dietary, and storage requirements are compatible; "
-        f"{'same city' if proximity_score == 100 else 'different cities'}; "
-        f"quantity fit {quantity_score:.0f}% {donation['quantity_unit']}; "
-        f"urgency {food_request['urgency']}/5."
+        f"{location_explanation}; quantity fit {quantity_score:.0f}% "
+        f"{donation['quantity_unit']}; urgency {food_request['urgency']}/5."
     )
     return {
         "score": round(score, 2),
@@ -142,10 +208,24 @@ def score_match(db, donation, food_request):
         "explanation": explanation,
         "pickup_overlap_start": pickup_overlap_start,
         "pickup_overlap_end": pickup_overlap_end,
+        "distance_km": round(distance_km, 2) if distance_km is not None else None,
+        "duration_minutes": (
+            round(route["duration_seconds"] / 60)
+            if route is not None
+            else None
+        ),
+        "max_distance_km": max_distance_km,
     }
 
 
-def get_recommendations(db, donation=None, food_request=None, limit=None):
+def get_recommendations(
+    db,
+    donation=None,
+    food_request=None,
+    limit=None,
+    route_errors=None,
+    cache_routes=True,
+):
     if donation is None and food_request is None:
         return []
 
@@ -181,7 +261,17 @@ def get_recommendations(db, donation=None, food_request=None, limit=None):
 
     results = []
     for available_food, request_item in pairs:
-        result = score_match(db, available_food, request_item)
+        try:
+            result = score_match(
+                db,
+                available_food,
+                request_item,
+                cache_routes=cache_routes,
+            )
+        except MapServiceError as error:
+            if route_errors is not None and not route_errors:
+                route_errors.append(error)
+            continue
         if result is None:
             continue
         results.append(
@@ -254,6 +344,9 @@ def get_recommendations(db, donation=None, food_request=None, limit=None):
                 "explanation": result["explanation"],
                 "components": result["components"],
                 "weighted_components": result["weighted_components"],
+                "distance_km": result["distance_km"],
+                "duration_minutes": result["duration_minutes"],
+                "max_distance_km": result["max_distance_km"],
             }
         )
     results.sort(key=lambda item: (-item["score"], item["food_name"].casefold()))

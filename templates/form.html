@@ -46,6 +46,10 @@
                 <label>Packaging and condition
                     <input type="text" name="packaging" maxlength="200" value="{{ request.form.get('packaging', '') }}" placeholder="e.g. Sealed crates; chilled during transport">
                 </label>
+                <label>Food pickup address
+                    <input type="text" name="pickup_address" maxlength="300" required value="{{ request.form.get('pickup_address', '') }}" autocomplete="street-address" placeholder="Use a public pickup point or approximate address">
+                    <small>Your exact address stays private until an allocation. OpenStreetMap receives it to locate the pickup point; the road distance is calculated using OpenStreetMap routing.</small>
+                </label>
                 <label>Prepared / harvested time (optional)
                     <input type="datetime-local" name="prepared_at" value="{{ request.form.get('prepared_at', '') }}">
                 </label>
@@ -67,6 +71,10 @@
                 <label class="checkbox-label">
                     <input type="checkbox" name="safety_confirmed" value="yes" required {{ "checked" if request.form.get("safety_confirmed") == "yes" }}>
                     <span>I confirm these details are accurate and that this food is handled and offered in accordance with applicable local food-safety requirements.</span>
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" name="location_consent" value="yes" required {{ "checked" if request.form.get("location_consent") == "yes" }}>
+                    <span>I understand that the address is sent to OpenStreetMap services for geocoding and road-distance estimates. It is not shown on public match cards.</span>
                 </label>
                 <p class="safety-note">Meals Match records the donor's declaration; it does not inspect, certify, or guarantee food safety.</p>
             {% else %}
@@ -100,6 +108,18 @@
                             <option value="{{ value }}" {{ "selected" if request.form.get("storage_preference", "any") == value }}>{{ label }}</option>
                         {% endfor %}
                     </select>
+                </label>
+                <label>Your collection address
+                    <input type="text" name="collection_address" maxlength="300" required value="{{ request.form.get('collection_address', '') }}" autocomplete="street-address" placeholder="Use a public pickup point or approximate address">
+                    <small>Your exact address stays private until an allocation. OpenStreetMap receives it to locate the collection point and calculate road distance.</small>
+                </label>
+                <label>Maximum road distance you can travel (km)
+                    <input type="number" name="max_distance_km" min="1" max="250" step="1" required value="{{ request.form.get('max_distance_km', '25') }}">
+                    <small>Only food within this driving distance will be recommended. You can choose from 1 to 250 km.</small>
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" name="location_consent" value="yes" required {{ "checked" if request.form.get("location_consent") == "yes" }}>
+                    <span>I understand that the address is sent to OpenStreetMap services for geocoding and road-distance estimates. It is not shown on public match cards.</span>
                 </label>
                 <label>Urgency
                     <select name="urgency" required>

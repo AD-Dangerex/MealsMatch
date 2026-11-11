@@ -42,7 +42,7 @@
                     <tbody>
                     {% for item in donations %}
                         <tr>
-                            <td><strong>{{ item.food_name }}</strong></td>
+                            <td><strong>{{ item.food_name }}</strong><br><small>{{ item.pickup_address or "Legacy listing without address" }}</small></td>
                             <td>{{ item.category }}</td>
                             <td>{{ "%.1f"|format(item.remaining_quantity) }} / {{ "%.1f"|format(item.quantity) }} {{ item.quantity_unit }}</td>
                             <td>{{ item.storage_method|capitalize }}</td>
@@ -68,7 +68,7 @@
         </section>
 
         <section class="content-panel" id="donor-matches">
-            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Recommended requests</h2><p class="panel-caption">Search every eligible request and sort by urgency, quantity, or match score.</p></div></div>
+            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Recommended requests</h2><p class="panel-caption">Search eligible requests, compare driving distance and estimated time, and sort by urgency, quantity, or match score. Distances use OpenStreetMap data. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>.</p></div></div>
             <form method="get" class="match-filters" role="search" aria-label="Filter recommended requests">
                 <label>Search
                     <input type="search" name="q" maxlength="80" value="{{ recommendation_filters.q }}" placeholder="Food, category, recipient, or city">
@@ -91,8 +91,16 @@
                 </label>
                 <label>Sort by
                     <select name="sort">
-                        {% for value, label in [("score", "Best match"), ("urgency", "Most urgent"), ("expiring", "Expiring soon"), ("quantity", "Most food")] %}
+                        {% for value, label in [("score", "Best match"), ("distance", "Nearest road route"), ("urgency", "Most urgent"), ("expiring", "Expiring soon"), ("quantity", "Most food")] %}
                             <option value="{{ value }}" {{ "selected" if recommendation_filters.sort == value }}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Distance filter
+                    <select name="max_distance">
+                        <option value="" {{ "selected" if recommendation_filters.max_distance is none }}>All request limits</option>
+                        {% for distance in [5, 10, 25, 50, 100, 250] %}
+                            <option value="{{ distance }}" {{ "selected" if recommendation_filters.max_distance == distance }}>Within {{ distance }} km</option>
                         {% endfor %}
                     </select>
                 </label>
@@ -109,6 +117,7 @@
                     <div class="match-top"><span class="match-score">{{ "%.0f"|format(match.score) }}<small>/100</small></span><span class="status status-open">Recommended</span></div>
                     <h3>{{ match.food_name }} → {{ match.recipient_name }}</h3>
                     <p>{{ match.recipient_type }} · {{ match.city }}</p>
+                    <p class="route-distance">{% if match.distance_km is not none %}🚗 {{ "%.1f"|format(match.distance_km) }} km road distance · about {{ match.duration_minutes }} min · recipient limit {{ match.max_distance_km|round|int }} km{% else %}Road distance unavailable for this legacy listing{% endif %}</p>
                     <p>{{ match.available_quantity|round(1) }} {{ match.quantity_unit }} available · {{ match.requested_quantity|round(1) }} {{ match.quantity_unit }} requested · supports {{ match.people_served }} people</p>
                     <p>Urgency {{ match.urgency }}/5 · collect by {{ match.collection_deadline|replace("T", " ") }}</p>
                     <p>Food: {{ match.storage_method }} storage{% if match.packaging %} · {{ match.packaging }}{% endif %}</p>
@@ -119,7 +128,7 @@
                     {% endif %}
                     <p class="match-reason">{{ match.explanation }}</p>
                     <details class="score-breakdown"><summary>See match score breakdown</summary>
-                        {% for key, label in [("quantity", "Quantity"), ("compatibility", "Food compatibility"), ("proximity", "Location"), ("timing", "Timing"), ("urgency", "Urgency"), ("fairness", "Fairness")] %}
+                        {% for key, label in [("quantity", "Quantity"), ("compatibility", "Food compatibility"), ("proximity", "Road distance"), ("timing", "Timing"), ("urgency", "Urgency"), ("fairness", "Fairness")] %}
                             <div class="score-row"><span>{{ label }} <b>{{ "%.0f"|format(match.components[key]) }}/100 · +{{ "%.1f"|format(match.weighted_components[key]) }} points</b></span><div class="score-track"><i style="width: {{ match.components[key] }}%"></i></div></div>
                         {% endfor %}
                     </details>
@@ -155,7 +164,7 @@
                 <tbody>{% for item in allocations %}<tr>
                     <td>{{ item.food_name }}</td><td>{{ item.partner_name }}{% if item.status == "pending" and item.partner_phone %}<br><small>Contact: {{ item.partner_phone }}</small>{% endif %}</td><td>{{ "%.1f"|format(item.allocated_quantity) }} {{ item.quantity_unit }}</td>
                     <td>{{ "%.0f"|format(item.match_score) }}/100</td><td><span class="status status-{{ item.status }}">{{ item.status }}</span></td>
-                    <td>{% if item.status == "pending" %}<details class="pickup-details"><summary>Handover info</summary><p>{{ item.pickup_start|replace("T", " ") }}–{{ item.pickup_end|replace("T", " ") }}</p><p>{{ item.storage_method|capitalize }} · {{ item.packaging or "Packaging not specified" }}</p><p>{{ item.pickup_notes or "No extra pickup instructions." }}</p></details><form method="post" action="{{ url_for('mark_collected', allocation_id=item.id) }}" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-button" type="submit">Mark collected</button></form>{% endif %}</td>
+                    <td>{% if item.status == "pending" %}<details class="pickup-details"><summary>Handover info</summary><p>{{ item.pickup_start|replace("T", " ") }}–{{ item.pickup_end|replace("T", " ") }}</p><p>{{ item.storage_method|capitalize }} · {{ item.packaging or "Packaging not specified" }}</p><p>Food pickup: {{ item.pickup_address or "Not provided" }}</p><p>Recipient collection: {{ item.collection_address or "Not provided" }}</p><p>{{ item.pickup_notes or "No extra pickup instructions." }}</p></details><form method="post" action="{{ url_for('mark_collected', allocation_id=item.id) }}" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-button" type="submit">Mark collected</button></form>{% endif %}</td>
                 </tr>{% endfor %}</tbody>
             </table></div>
             {% else %}<div class="empty-state"><p>Allocations will appear here after you accept a recommended match.</p></div>{% endif %}
@@ -179,10 +188,10 @@
             <div class="panel-heading"><div><div class="section-label">YOUR NEEDS</div><h2>Food requests</h2></div></div>
             {% if requests %}
             <div class="table-wrap"><table>
-                <thead><tr><th>Category</th><th>Still needed</th><th>People served</th><th>Storage</th><th>Pickup window</th><th>Deadline</th><th>Urgency</th><th>Status</th><th></th></tr></thead>
+                <thead><tr><th>Category</th><th>Still needed</th><th>People served</th><th>Storage</th><th>Collection location</th><th>Max road distance</th><th>Pickup window</th><th>Deadline</th><th>Urgency</th><th>Status</th><th></th></tr></thead>
                 <tbody>{% for item in requests %}<tr>
                     <td><strong>{{ item.category }}</strong></td><td>{{ "%.1f"|format(item.remaining_quantity) }} / {{ "%.1f"|format(item.quantity) }} {{ item.quantity_unit }}</td>
-                    <td>{{ item.people_served }}</td><td>{{ item.storage_preference|capitalize }}</td>
+                    <td>{{ item.people_served }}</td><td>{{ item.storage_preference|capitalize }}</td><td>{{ item.collection_address or "Address needed for route matching" }}</td><td>{{ item.max_distance_km|round|int }} km</td>
                     <td>{{ item.pickup_start|replace("T", " ") }}–{{ item.pickup_end[11:] }}</td>
                     <td>{{ item.collection_deadline|replace("T", " ") }}</td><td>{{ item.urgency }}/5</td>
                     <td><span class="status status-{{ item.status }}">{{ item.status|replace("_", " ") }}</span></td>
@@ -193,7 +202,7 @@
         </section>
 
         <section class="content-panel" id="recipient-matches">
-            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Available food matches</h2><p class="panel-caption">Discover every eligible listing for your open requests.</p></div></div>
+            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Available food matches</h2><p class="panel-caption">Discover eligible listings within your chosen road-distance limit. Routes and estimated drive times use OpenStreetMap data. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>.</p></div></div>
             <form method="get" class="match-filters" role="search" aria-label="Filter available food matches">
                 <label>Search
                     <input type="search" name="q" maxlength="80" value="{{ recommendation_filters.q }}" placeholder="Food, category, donor, or city">
@@ -216,8 +225,16 @@
                 </label>
                 <label>Sort by
                     <select name="sort">
-                        {% for value, label in [("score", "Best match"), ("urgency", "Most urgent"), ("expiring", "Expiring soon"), ("quantity", "Most food")] %}
+                        {% for value, label in [("score", "Best match"), ("distance", "Nearest road route"), ("urgency", "Most urgent"), ("expiring", "Expiring soon"), ("quantity", "Most food")] %}
                             <option value="{{ value }}" {{ "selected" if recommendation_filters.sort == value }}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Distance filter
+                    <select name="max_distance">
+                        <option value="" {{ "selected" if recommendation_filters.max_distance is none }}>All request limits</option>
+                        {% for distance in [5, 10, 25, 50, 100, 250] %}
+                            <option value="{{ distance }}" {{ "selected" if recommendation_filters.max_distance == distance }}>Within {{ distance }} km</option>
                         {% endfor %}
                     </select>
                 </label>
@@ -233,6 +250,7 @@
                     <div class="match-top"><span class="match-score">{{ "%.0f"|format(match.score) }}<small>/100</small></span><span class="status status-available">Available</span></div>
                     <h3>{{ match.food_name }}</h3>
                     <p>{{ match.donor_name }} · {{ match.donor_type }} · {{ match.city }}</p>
+                    <p class="route-distance">{% if match.distance_km is not none %}{{ "%.1f"|format(match.distance_km) }} km road distance · about {{ match.duration_minutes }} min{% else %}Road distance unavailable{% endif %}</p>
                     <p>{{ match.available_quantity|round(1) }} {{ match.quantity_unit }} available · your request: {{ match.requested_quantity|round(1) }} {{ match.quantity_unit }}</p>
                     <p>{{ match.storage_method|capitalize }} storage{% if match.packaging %} · {{ match.packaging }}{% endif %}</p>
                     <p>Prepared: {{ match.prepared_at|replace("T", " ") if match.prepared_at else "Not provided" }} · use by {{ match.expires_at|replace("T", " ") }}</p>
@@ -243,7 +261,7 @@
                     {% endif %}
                     <p class="match-reason">{{ match.explanation }}</p>
                     <details class="score-breakdown"><summary>See match score breakdown</summary>
-                        {% for key, label in [("quantity", "Quantity"), ("compatibility", "Food compatibility"), ("proximity", "Location"), ("timing", "Timing"), ("urgency", "Urgency"), ("fairness", "Fairness")] %}
+                        {% for key, label in [("quantity", "Quantity"), ("compatibility", "Food compatibility"), ("proximity", "Road distance"), ("timing", "Timing"), ("urgency", "Urgency"), ("fairness", "Fairness")] %}
                             <div class="score-row"><span>{{ label }} <b>{{ "%.0f"|format(match.components[key]) }}/100 · +{{ "%.1f"|format(match.weighted_components[key]) }} points</b></span><div class="score-track"><i style="width: {{ match.components[key] }}%"></i></div></div>
                         {% endfor %}
                     </details>
@@ -269,7 +287,7 @@
                 <tbody>{% for item in allocations %}<tr>
                     <td>{{ item.food_name }}</td><td>{{ item.partner_name }}{% if item.status == "pending" and item.partner_phone %}<br><small>Contact: {{ item.partner_phone }}</small>{% endif %}</td><td>{{ "%.1f"|format(item.allocated_quantity) }} {{ item.quantity_unit }}</td>
                     <td>{{ "%.0f"|format(item.match_score) }}/100</td><td><span class="status status-{{ item.status }}">{{ item.status }}</span></td>
-                    <td>{% if item.status == "pending" %}<details class="pickup-details"><summary>Handover info</summary><p>{{ item.pickup_start|replace("T", " ") }}–{{ item.pickup_end|replace("T", " ") }}</p><p>{{ item.storage_method|capitalize }} · {{ item.packaging or "Packaging not specified" }}</p><p>{{ item.pickup_notes or "No extra pickup instructions." }}</p></details><form method="post" action="{{ url_for('mark_collected', allocation_id=item.id) }}" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-button" type="submit">Confirm collection</button></form>{% endif %}</td>
+                    <td>{% if item.status == "pending" %}<details class="pickup-details"><summary>Handover info</summary><p>{{ item.pickup_start|replace("T", " ") }}–{{ item.pickup_end|replace("T", " ") }}</p><p>{{ item.storage_method|capitalize }} · {{ item.packaging or "Packaging not specified" }}</p><p>Food pickup: {{ item.pickup_address or "Not provided" }}</p><p>Your collection: {{ item.collection_address or "Not provided" }}</p><p>{{ item.pickup_notes or "No extra pickup instructions." }}</p></details><form method="post" action="{{ url_for('mark_collected', allocation_id=item.id) }}" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-button" type="submit">Confirm collection</button></form>{% endif %}</td>
                 </tr>{% endfor %}</tbody>
             </table></div>
             {% else %}<div class="empty-state"><p>Once a donor allocates food to your request, it will appear here.</p></div>{% endif %}
