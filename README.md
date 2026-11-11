@@ -89,6 +89,8 @@ The public privacy policy is available at
 `https://YOUR-RAILWAY-DOMAIN/privacy-policy`. Set `PRIVACY_CONTACT_EMAIL` to a
 public address for privacy questions and account deletion requests; otherwise
 the app uses `ADMIN_EMAIL` as the contact address when configured.
+The public terms of service are at
+`https://YOUR-RAILWAY-DOMAIN/terms-of-service`.
 
 ## Distance-aware matching
 

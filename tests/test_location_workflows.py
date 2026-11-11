@@ -83,6 +83,14 @@ class LocationWorkflowTests(unittest.TestCase):
         self.assertIn(b"OpenStreetMap", response.data)
         self.assertIn(b'href="/privacy-policy"', response.data)
 
+    def test_terms_are_public_and_linked_in_footer(self):
+        response = self.donor.get("/terms-of-service")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Terms of service", response.data)
+        self.assertIn(b"food safety", response.data.lower())
+        self.assertIn(b'href="/terms-of-service"', response.data)
+
     def _csrf(self, client, path):
         response = client.get(path)
         match = re.search(

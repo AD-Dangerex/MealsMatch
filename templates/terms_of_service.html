@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Terms of Service | Meals Match{% endblock %}
+{% block meta_description %}Read the terms for using Meals Match to list surplus food, request food, and coordinate handovers.{% endblock %}
+{% block content %}
+<section class="page-shell">
+    <div class="section-label">MEALS MATCH COMMUNITY</div>
+    <h1>Terms of service</h1>
+    <p class="form-intro">Last updated: November 11, 2026</p>
+
+    <section class="content-panel">
+        <h2>Using Meals Match</h2>
+        <p>Meals Match helps donors publish surplus-food listings and helps recipients request food and discover potential matches. You must provide accurate account information, keep your sign-in details secure, and use the service lawfully and respectfully.</p>
+        <p>You are responsible for activity carried out through your account. Do not impersonate others, access accounts or information without permission, interfere with the service, or use it for unlawful, misleading, or abusive purposes.</p>
+    </section>
+
+    <section class="content-panel">
+        <h2>Listings, requests, and food safety</h2>
+        <p>You are responsible for the accuracy and completeness of the information you submit, including quantities, ingredients, allergens, storage, preparation, expiry, pickup details, and availability. Only publish information you are authorized to share.</p>
+        <p>Meals Match does not inspect, handle, store, transport, or certify food. Donors remain responsible for their food and the accuracy of their declarations. Recipients must independently confirm the food's condition, ingredients, allergens, storage needs, and suitability before accepting it. Participants are responsible for following applicable food-safety and local requirements.</p>
+        <p>Matches and scores are automated suggestions based on information users provide and third-party map data. They are not a guarantee of availability, safety, suitability, route accuracy, or successful collection. Participants should confirm arrangements directly before travelling or transferring food.</p>
+    </section>
+
+    <section class="content-panel">
+        <h2>Allocations and handovers</h2>
+        <p>Recording a match or allocation in Meals Match does not itself transfer food or create a guarantee that a handover will occur. Donors and recipients are responsible for agreeing on final quantities, timing, location, transport, and any other handover arrangements.</p>
+        <p>Do not share another user's private contact or pickup information beyond what is needed for an agreed handover. Use a safe public handover point when appropriate.</p>
+    </section>
+
+    <section class="content-panel">
+        <h2>Third-party services and availability</h2>
+        <p>The service may rely on hosting, database, authentication, geocoding, and routing providers. Their services may be unavailable, change, or produce inaccurate results. Meals Match does not control those providers.</p>
+        <p>We aim to keep the service useful, but do not guarantee uninterrupted access, error-free operation, or permanent storage of submitted information. We may update, suspend, or remove features or content where reasonably needed to operate or protect the service.</p>
+    </section>
+
+    <section class="content-panel">
+        <h2>Account and privacy</h2>
+        <p>You may stop using the service at any time. Accounts or content may be restricted or removed if these terms are seriously or repeatedly violated, or if action is needed to protect users or the service. Some operational, allocation, or audit records may be retained after account access ends.</p>
+        <p>Our <a href="{{ url_for('privacy_policy') }}">Privacy Policy</a> explains how account and listing information is handled. By using Meals Match, you acknowledge that policy and these terms.</p>
+    </section>
+
+    <section class="content-panel">
+        <h2>Disclaimers and changes</h2>
+        <p>Meals Match is provided on an “as available” basis. To the extent permitted by applicable law, the service is not responsible for decisions made based on user-submitted information, matching results, third-party maps, or arrangements between participants. Nothing in these terms excludes rights or responsibilities that cannot legally be excluded.</p>
+        <p>We may revise these terms as the service changes. The current version and its last-updated date will be posted on this page. Continued use after an update means you accept the revised terms, where permitted by applicable law.</p>
+    </section>
+
+    <section class="content-panel">
+        <h2>Contact</h2>
+        {% if privacy_contact_email %}
+            <p>For questions about these terms, contact <a href="mailto:{{ privacy_contact_email|e }}">{{ privacy_contact_email|e }}</a>.</p>
+        {% else %}
+            <p>For questions about these terms, contact the site operator using the support email shown on the Google OAuth consent screen.</p>
+        {% endif %}
+    </section>
+
+    <p>This general summary is not legal advice. The site operator should review these terms for the jurisdictions where the service is offered.</p>
+</section>
+{% endblock %}

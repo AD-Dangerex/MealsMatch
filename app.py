@@ -359,6 +359,11 @@ def privacy_policy():
     return render_template("privacy_policy.html")
 
 
+@app.get("/terms-of-service")
+def terms_of_service():
+    return render_template("terms_of_service.html")
+
+
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if g.user is not None:
