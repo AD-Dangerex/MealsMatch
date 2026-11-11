@@ -167,6 +167,10 @@ def inject_template_helpers():
         "csrf_token": csrf_token,
         "current_user": g.get("user"),
         "google_login_enabled": google_client is not None,
+        "privacy_contact_email": (
+            os.environ.get("PRIVACY_CONTACT_EMAIL", "").strip()
+            or os.environ.get("ADMIN_EMAIL", "").strip()
+        ),
     }
 
 
@@ -348,6 +352,11 @@ def home():
         ).fetchone()["n"],
     }
     return render_template("index.html", impact_stats=impact_stats)
+
+
+@app.get("/privacy-policy")
+def privacy_policy():
+    return render_template("privacy_policy.html")
 
 
 @app.route("/register", methods=["GET", "POST"])

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Privacy Policy | Meals Match{% endblock %}
+{% block meta_description %}Learn what information Meals Match collects, how it is used, and how to request access or deletion.{% endblock %}
+{% block content %}
+<section class="page-shell">
+    <div class="section-label">MEALS MATCH COMMUNITY</div>
+    <h1>Privacy policy</h1>
+    <p class="form-intro">Last updated: November 11, 2026</p>
+
+    <section class="content-panel">
+        <h2>Information we collect</h2>
+        <p>When you create or use a Meals Match account, we store information you provide, such as your name, email address, account role, organisation or household details, city, and optional phone number.</p>
+        <p>Food listings and requests may include food and quantity details, dietary and allergen information, pickup or collection times, notes, addresses, and approximate coordinates. Do not enter information you do not want used to coordinate a food handover.</p>
+        <p>If you use Google sign-in, Google provides your account's stable identifier, email address, verification status, and profile name. Meals Match stores the identifier to recognize your account. We do not receive or store your Google password.</p>
+    </section>
+
+    <section class="content-panel">
+        <h2>How information is used</h2>
+        <p>We use this information to operate accounts, find compatible food matches, coordinate allocations and collections, protect the service, and maintain necessary operational and allocation records.</p>
+        <p>Exact pickup and collection addresses are not displayed on public match cards. They are shown to the relevant donor and recipient after an allocation is recorded. Other account and listing information is available only as needed for the service's matching and coordination features.</p>
+    </section>
+
+    <section class="content-panel">
+        <h2>Service providers and sharing</h2>
+        <p>Google handles sign-in under Google's own privacy terms. When an address is submitted for matching, the address is sent to OpenStreetMap's Nominatim geocoding service. The resulting coordinates are sent to the configured OSRM routing service to calculate driving routes using OpenStreetMap road data. These providers process data under their own policies.</p>
+        <p>The application is hosted on Railway and uses its configured database provider to store account and service data. We do not sell personal information or use it for third-party advertising.</p>
+    </section>
+
+    <section class="content-panel">
+        <h2>Cookies, security, and retention</h2>
+        <p>Meals Match uses a signed session cookie to keep you logged in and protect form submissions. The cookie is configured as HTTP-only and uses secure transport in production.</p>
+        <p>We use reasonable safeguards to protect stored information. No online service can guarantee absolute security. Information is retained while needed to provide the service and maintain operational records. The app does not currently provide self-service account deletion; allocation and audit records may need to be retained for service integrity.</p>
+    </section>
+
+    <section class="content-panel">
+        <h2>Your choices and contact</h2>
+        <p>You may choose not to use Google sign-in or not to provide optional profile details. Location consent is required to publish a food listing or request because distance-based matching depends on it.</p>
+        {% if privacy_contact_email %}
+            <p>To ask about your information or request account deletion, contact <a href="mailto:{{ privacy_contact_email|e }}">{{ privacy_contact_email|e }}</a>. We may need to verify your identity before acting on a request.</p>
+        {% else %}
+            <p>To ask about your information or request account deletion, contact the site operator using the support email shown on the Google OAuth consent screen. The site operator can configure a dedicated address by setting <code>PRIVACY_CONTACT_EMAIL</code> in Railway.</p>
+        {% endif %}
+    </section>
+
+    <p>This service is a community food-sharing platform. Food and safety details are supplied by users and are not independently certified by Meals Match.</p>
+</section>
+{% endblock %}

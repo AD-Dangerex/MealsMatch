@@ -74,6 +74,15 @@ class LocationWorkflowTests(unittest.TestCase):
             "https://cs-ia-website-production.up.railway.app/auth/google/callback",
         )
 
+    def test_privacy_policy_is_public_and_linked_in_footer(self):
+        response = self.donor.get("/privacy-policy")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Information we collect", response.data)
+        self.assertIn(b"Google sign-in", response.data)
+        self.assertIn(b"OpenStreetMap", response.data)
+        self.assertIn(b'href="/privacy-policy"', response.data)
+
     def _csrf(self, client, path):
         response = client.get(path)
         match = re.search(

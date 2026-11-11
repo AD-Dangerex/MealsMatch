@@ -85,6 +85,11 @@ password. Reset links expire after 30
 minutes and can only be used once. If mail is not configured, users can sign
 in with Google if their account is linked, or contact the site administrator.
 
+The public privacy policy is available at
+`https://YOUR-RAILWAY-DOMAIN/privacy-policy`. Set `PRIVACY_CONTACT_EMAIL` to a
+public address for privacy questions and account deletion requests; otherwise
+the app uses `ADMIN_EMAIL` as the contact address when configured.
+
 ## Distance-aware matching
 
 Donors enter a food pickup point and recipients enter a collection point.
