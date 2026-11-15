@@ -260,10 +260,18 @@ class LocationWorkflowTests(unittest.TestCase):
         donor_dashboard = self.donor.get("/dashboard")
         recipient_dashboard = self.recipient.get("/dashboard")
 
-        self.assertIn(b"Open food requests", donor_dashboard.data)
+        self.assertIn(b"All open requests", donor_dashboard.data)
         self.assertIn(b"vegetables", donor_dashboard.data)
-        self.assertIn(b"Available food listings", recipient_dashboard.data)
+        self.assertLess(
+            donor_dashboard.data.index(b'id="donor-matches"'),
+            donor_dashboard.data.index(b"All open requests"),
+        )
+        self.assertIn(b"All available listings", recipient_dashboard.data)
         self.assertIn(b"Fresh apples", recipient_dashboard.data)
+        self.assertLess(
+            recipient_dashboard.data.index(b'id="recipient-matches"'),
+            recipient_dashboard.data.index(b"All available listings"),
+        )
         self.assertNotIn(b"Private donor pickup", recipient_dashboard.data)
         self.assertNotIn(b"Private recipient collection", donor_dashboard.data)
         self.assertIn(b"No eligible requests match your active listings right now.", donor_dashboard.data)

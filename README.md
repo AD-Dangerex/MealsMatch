@@ -37,9 +37,9 @@ Open `http://127.0.0.1:5000`. The app creates its SQLite database in the
 - Search all eligible matches by food, category, participant, or city; filter by
   category, storage, and distance; and sort by match score, nearest route,
   urgency, expiry, or quantity.
-- Donor and recipient dashboards also list active community requests and
-  available food listings, even when they do not currently qualify as a match.
-  Allocations remain limited to eligible recommended matches.
+- Donor and recipient matching engines list active community requests and
+  available food listings, including entries that do not currently qualify as
+  a match. Allocations remain limited to eligible recommended matches.
 - Donors can record and extend partial allocations. Both parties can confirm collection.
 - Admins can review account, allocation, and audit-log information, see
   category-level distribution totals, and download an allocation CSV report.

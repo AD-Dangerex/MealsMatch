@@ -85,9 +85,10 @@
             {% endif %}
         </section>
 
-        <section class="content-panel">
-            <div class="panel-heading"><div><div class="section-label">COMMUNITY</div><h2>Open food requests</h2><p class="panel-caption">Browse active requests. Recommended requests below are checked for a suitable match.</p></div></div>
+        <section class="content-panel" id="donor-matches">
+            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Requests and recommendations</h2><p class="panel-caption">Browse all open requests and review the eligible matches calculated for your food listings. Distances use OpenStreetMap data. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>.</p></div></div>
             {% if community_requests %}
+            <h3>All open requests</h3>
             <div class="table-wrap"><table>
                 <thead><tr><th>Organisation</th><th>Category</th><th>Still needed</th><th>Storage</th><th>People served</th><th>Urgency</th><th>Deadline</th></tr></thead>
                 <tbody>{% for item in community_requests %}
@@ -102,11 +103,9 @@
                     </tr>
                 {% endfor %}</tbody>
             </table></div>
-            {% else %}<div class="empty-state"><p>There are no open community requests right now.</p></div>{% endif %}
-        </section>
-
-        <section class="content-panel" id="donor-matches">
-            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Recommended requests</h2><p class="panel-caption">Search eligible requests, compare driving distance and estimated time, and sort by urgency, quantity, or match score. Distances use OpenStreetMap data. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>.</p></div></div>
+            {% else %}<div class="empty-state"><p>There are no open requests to match right now.</p></div>{% endif %}
+            <h3>Eligible recommendations</h3>
+            <p class="panel-caption">Search eligible requests, compare driving distance and estimated time, and sort by urgency, quantity, or match score.</p>
             <form method="get" class="match-filters" role="search" aria-label="Filter recommended requests">
                 <label>Search
                     <input type="search" name="q" maxlength="80" value="{{ recommendation_filters.q }}" placeholder="Food, category, recipient, or city">
@@ -243,9 +242,10 @@
             {% else %}<div class="empty-state"><p>No food requests yet.</p><a href="{{ url_for('new_request') }}">Create your first request →</a></div>{% endif %}
         </section>
 
-        <section class="content-panel">
-            <div class="panel-heading"><div><div class="section-label">COMMUNITY</div><h2>Available food listings</h2><p class="panel-caption">Browse active listings. Recommended matches below meet your request requirements.</p></div></div>
+        <section class="content-panel" id="recipient-matches">
+            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Food listings and matches</h2><p class="panel-caption">Browse all available listings and see which ones meet your request requirements. Routes and estimated drive times use OpenStreetMap data. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>.</p></div></div>
             {% if available_donations %}
+            <h3>All available listings</h3>
             <div class="table-wrap"><table>
                 <thead><tr><th>Food</th><th>Donor</th><th>Category</th><th>Available</th><th>Storage</th><th>Dietary tags</th><th>Use by</th></tr></thead>
                 <tbody>{% for item in available_donations %}
@@ -260,11 +260,9 @@
                     </tr>
                 {% endfor %}</tbody>
             </table></div>
-            {% else %}<div class="empty-state"><p>There are no available community food listings right now.</p></div>{% endif %}
-        </section>
-
-        <section class="content-panel" id="recipient-matches">
-            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Available food matches</h2><p class="panel-caption">Discover eligible listings within your chosen road-distance limit. Routes and estimated drive times use OpenStreetMap data. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>.</p></div></div>
+            {% else %}<div class="empty-state"><p>There are no available listings to match right now.</p></div>{% endif %}
+            <h3>Eligible matches</h3>
+            <p class="panel-caption">Search and sort listings that meet your request requirements, including your road-distance limit.</p>
             <form method="get" class="match-filters" role="search" aria-label="Filter available food matches">
                 <label>Search
                     <input type="search" name="q" maxlength="80" value="{{ recommendation_filters.q }}" placeholder="Food, category, donor, or city">
