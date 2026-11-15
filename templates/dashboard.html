@@ -85,6 +85,26 @@
             {% endif %}
         </section>
 
+        <section class="content-panel">
+            <div class="panel-heading"><div><div class="section-label">COMMUNITY</div><h2>Open food requests</h2><p class="panel-caption">Browse active requests. Recommended requests below are checked for a suitable match.</p></div></div>
+            {% if community_requests %}
+            <div class="table-wrap"><table>
+                <thead><tr><th>Organisation</th><th>Category</th><th>Still needed</th><th>Storage</th><th>People served</th><th>Urgency</th><th>Deadline</th></tr></thead>
+                <tbody>{% for item in community_requests %}
+                    <tr>
+                        <td>{{ item.recipient_name }}<br><small>{{ item.recipient_type }} · {{ item.city or "Location not provided" }}</small></td>
+                        <td>{{ item.category }}</td>
+                        <td>{{ "%.1f"|format(item.remaining_quantity) }} {{ item.quantity_unit }}</td>
+                        <td>{{ item.storage_preference|capitalize }}</td>
+                        <td>{{ item.people_served }}</td>
+                        <td>{{ item.urgency }}/5</td>
+                        <td>{{ item.collection_deadline|replace("T", " ") }}</td>
+                    </tr>
+                {% endfor %}</tbody>
+            </table></div>
+            {% else %}<div class="empty-state"><p>There are no open community requests right now.</p></div>{% endif %}
+        </section>
+
         <section class="content-panel" id="donor-matches">
             <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Recommended requests</h2><p class="panel-caption">Search eligible requests, compare driving distance and estimated time, and sort by urgency, quantity, or match score. Distances use OpenStreetMap data. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>.</p></div></div>
             <form method="get" class="match-filters" role="search" aria-label="Filter recommended requests">
@@ -221,6 +241,26 @@
                 </tr>{% endfor %}</tbody>
             </table></div>
             {% else %}<div class="empty-state"><p>No food requests yet.</p><a href="{{ url_for('new_request') }}">Create your first request →</a></div>{% endif %}
+        </section>
+
+        <section class="content-panel">
+            <div class="panel-heading"><div><div class="section-label">COMMUNITY</div><h2>Available food listings</h2><p class="panel-caption">Browse active listings. Recommended matches below meet your request requirements.</p></div></div>
+            {% if available_donations %}
+            <div class="table-wrap"><table>
+                <thead><tr><th>Food</th><th>Donor</th><th>Category</th><th>Available</th><th>Storage</th><th>Dietary tags</th><th>Use by</th></tr></thead>
+                <tbody>{% for item in available_donations %}
+                    <tr>
+                        <td><strong>{{ item.food_name }}</strong><br><small>{{ item.packaging or "Packaging not specified" }}</small></td>
+                        <td>{{ item.donor_name }}<br><small>{{ item.donor_type }} · {{ item.city or "Location not provided" }}</small></td>
+                        <td>{{ item.category }}</td>
+                        <td>{{ "%.1f"|format(item.remaining_quantity) }} {{ item.quantity_unit }}</td>
+                        <td>{{ item.storage_method|capitalize }}</td>
+                        <td>{{ item.dietary_tags or "None listed" }}{% if item.allergens %}<br><small>Allergens: {{ item.allergens }}</small>{% endif %}</td>
+                        <td>{{ item.expires_at|replace("T", " ") }}</td>
+                    </tr>
+                {% endfor %}</tbody>
+            </table></div>
+            {% else %}<div class="empty-state"><p>There are no available community food listings right now.</p></div>{% endif %}
         </section>
 
         <section class="content-panel" id="recipient-matches">

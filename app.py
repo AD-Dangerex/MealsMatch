@@ -885,6 +885,20 @@ def dashboard():
                ORDER BY created_at DESC""",
             (user["id"],),
         ).fetchall()
+        community_requests = db.execute(
+            """SELECT requests.category, requests.remaining_quantity,
+                      requests.quantity_unit, requests.storage_preference,
+                      requests.people_served, requests.urgency,
+                      requests.collection_deadline,
+                      recipients.organization_name AS recipient_name,
+                      recipients.organization_type AS recipient_type,
+                      locations.city
+               FROM requests
+               JOIN recipients ON recipients.user_id = requests.recipient_id
+               LEFT JOIN locations ON locations.user_id = requests.recipient_id
+               WHERE requests.status IN ('open', 'partially_fulfilled')
+               ORDER BY requests.urgency DESC, requests.created_at ASC"""
+        ).fetchall()
         recommendations = []
         route_errors = []
         for donation in donations:
@@ -931,6 +945,7 @@ def dashboard():
             profile=profile,
             metrics=donor_metrics,
             donations=donations,
+            community_requests=community_requests,
             recommendations=recommendations,
             recommendation_total=recommendation_total,
             recommendation_filters=recommendation_filters,
@@ -949,6 +964,21 @@ def dashboard():
         """SELECT * FROM requests WHERE recipient_id = ?
            ORDER BY created_at DESC""",
         (user["id"],),
+    ).fetchall()
+    available_donations = db.execute(
+        """SELECT donations.food_name, donations.category,
+                  donations.remaining_quantity, donations.quantity_unit,
+                  donations.storage_method, donations.packaging,
+                  donations.prepared_at, donations.dietary_tags,
+                  donations.allergens, donations.expires_at,
+                  donors.organization_name AS donor_name,
+                  donors.organization_type AS donor_type, locations.city
+           FROM donations
+           JOIN donors ON donors.user_id = donations.donor_id
+           LEFT JOIN locations ON locations.user_id = donations.donor_id
+           WHERE donations.status IN ('available', 'partially_allocated')
+             AND donations.safety_confirmed = 1
+           ORDER BY donations.created_at ASC"""
     ).fetchall()
     recommendations = []
     route_errors = []
@@ -997,6 +1027,7 @@ def dashboard():
         profile=profile,
         metrics=recipient_metrics,
         requests=requests,
+        available_donations=available_donations,
         recommendations=recommendations,
         recommendation_total=recommendation_total,
         recommendation_filters=recommendation_filters,

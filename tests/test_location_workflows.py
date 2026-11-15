@@ -129,14 +129,14 @@ class LocationWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 302)
 
-    def _create_donation(self, address, location_consent="yes"):
+    def _create_donation(self, address, location_consent="yes", category="fruit"):
         token = self._csrf(self.donor, "/donations/new")
         return self.donor.post(
             "/donations/new",
             data={
                 "csrf_token": token,
                 "food_name": "Fresh apples",
-                "category": "fruit",
+                "category": category,
                 "quantity": "20",
                 "quantity_unit": "kg",
                 "dietary_tags": "vegan",
@@ -153,13 +153,13 @@ class LocationWorkflowTests(unittest.TestCase):
             },
         )
 
-    def _create_request(self, address):
+    def _create_request(self, address, category="fruit"):
         token = self._csrf(self.recipient, "/requests/new")
         return self.recipient.post(
             "/requests/new",
             data={
                 "csrf_token": token,
-                "category": "fruit",
+                "category": category,
                 "quantity": "10",
                 "quantity_unit": "kg",
                 "people_served": "12",
@@ -245,6 +245,29 @@ class LocationWorkflowTests(unittest.TestCase):
         for response in (donor_allocations, recipient_allocations):
             self.assertIn(b"Private donor pickup", response.data)
             self.assertIn(b"Private recipient collection", response.data)
+
+    @patch(
+        "app.geocode_address",
+        side_effect=[
+            Coordinates(51.5, -0.12),
+            Coordinates(51.55, -0.1),
+        ],
+    )
+    def test_counterpart_listings_are_visible_without_an_eligible_match(self, _geocode):
+        self._create_donation("Private donor pickup", category="fruit")
+        self._create_request("Private recipient collection", category="vegetables")
+
+        donor_dashboard = self.donor.get("/dashboard")
+        recipient_dashboard = self.recipient.get("/dashboard")
+
+        self.assertIn(b"Open food requests", donor_dashboard.data)
+        self.assertIn(b"vegetables", donor_dashboard.data)
+        self.assertIn(b"Available food listings", recipient_dashboard.data)
+        self.assertIn(b"Fresh apples", recipient_dashboard.data)
+        self.assertNotIn(b"Private donor pickup", recipient_dashboard.data)
+        self.assertNotIn(b"Private recipient collection", donor_dashboard.data)
+        self.assertIn(b"No eligible requests match your active listings right now.", donor_dashboard.data)
+        self.assertIn(b"No suitable food matches your open requests right now.", recipient_dashboard.data)
 
     def test_request_rejects_distance_outside_supported_range(self):
         token = self._csrf(self.recipient, "/requests/new")
