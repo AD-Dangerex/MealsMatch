@@ -91,6 +91,18 @@ class LocationWorkflowTests(unittest.TestCase):
         self.assertIn(b"food safety", response.data.lower())
         self.assertIn(b'href="/terms-of-service"', response.data)
 
+    def test_homepage_includes_accessible_lazy_loaded_food_photos(self):
+        response = self.donor.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"food-gallery-grid", response.data)
+        self.assertIn(
+            b"alt=\"Friends gathering around a table to share a meal\"",
+            response.data,
+        )
+        self.assertGreaterEqual(response.data.count(b'loading="lazy"'), 3)
+        self.assertIn(b'class="hero-photo-note"', response.data)
+
     def _csrf(self, client, path):
         response = client.get(path)
         match = re.search(
@@ -211,6 +223,8 @@ class LocationWorkflowTests(unittest.TestCase):
         for response in (recipient_matches, donor_matches):
             self.assertEqual(response.status_code, 200)
             self.assertIn(b"12.0 km road distance", response.data)
+            self.assertIn(b"dashboard-photo-banner", response.data)
+            self.assertIn(b'class="match-image"', response.data)
         self.assertNotIn(b"Private donor pickup", recipient_matches.data)
         self.assertNotIn(b"Private recipient collection", donor_matches.data)
 

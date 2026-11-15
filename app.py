@@ -163,8 +163,26 @@ def inject_template_helpers():
             session["csrf_token"] = secrets.token_urlsafe(32)
         return session["csrf_token"]
 
+    def food_image_url(category):
+        category = str(category or "").casefold()
+        if any(term in category for term in ("fruit", "vegetable", "produce", "salad")):
+            return (
+                "https://images.unsplash.com/photo-1542838132-92c53300491e"
+                "?auto=format&fit=crop&w=900&q=80"
+            )
+        if any(term in category for term in ("meal", "prepared", "cooked", "dish")):
+            return (
+                "https://images.unsplash.com/photo-1528605248644-14dd04022da1"
+                "?auto=format&fit=crop&w=900&q=80"
+            )
+        return (
+            "https://images.unsplash.com/photo-1504674900247-0877df9cc836"
+            "?auto=format&fit=crop&w=900&q=80"
+        )
+
     return {
         "csrf_token": csrf_token,
+        "food_image_url": food_image_url,
         "current_user": g.get("user"),
         "google_login_enabled": google_client is not None,
         "privacy_contact_email": (

@@ -18,6 +18,24 @@
             <a class="primary-button" href="{{ url_for('new_request') }}">+ Request food</a>
         {% endif %}
     </div>
+    <section class="dashboard-photo-banner dashboard-photo-banner-{{ role }}" aria-label="Food sharing inspiration">
+        {% if role == "donor" %}
+            <img src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&amp;fit=crop&amp;w=1400&amp;q=80" alt="" decoding="async">
+        {% elif role == "recipient" %}
+            <img src="https://images.unsplash.com/photo-1528605248644-14dd04022da1?auto=format&amp;fit=crop&amp;w=1400&amp;q=80" alt="" decoding="async">
+        {% else %}
+            <img src="https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&amp;fit=crop&amp;w=1400&amp;q=80" alt="" decoding="async">
+        {% endif %}
+        <div class="dashboard-photo-shade"></div>
+        <div class="dashboard-photo-copy">
+            <span>{{ role|upper }} / COMMUNITY FOOD SHARING</span>
+            <strong>
+                {% if role == "donor" %}Share good food. Make a local difference.
+                {% elif role == "recipient" %}Find the food your community needs.
+                {% else %}See the connections moving food forward.{% endif %}
+            </strong>
+        </div>
+    </section>
 
     {% if role == "donor" %}
         <section class="profile-strip">
@@ -114,6 +132,10 @@
             <div class="match-grid">
                 {% for match in recommendations %}
                 <article class="match-card">
+                    <div class="match-image">
+                        <img src="{{ food_image_url(match.category) }}" alt="" loading="lazy" decoding="async">
+                        <span>{{ match.category }}</span>
+                    </div>
                     <div class="match-top"><span class="match-score">{{ "%.0f"|format(match.score) }}<small>/100</small></span><span class="status status-open">Recommended</span></div>
                     <h3>{{ match.food_name }} → {{ match.recipient_name }}</h3>
                     <p>{{ match.recipient_type }} · {{ match.city }}</p>
@@ -247,6 +269,10 @@
             {% if recommendations %}
             <div class="match-grid">{% for match in recommendations %}
                 <article class="match-card">
+                    <div class="match-image">
+                        <img src="{{ food_image_url(match.category) }}" alt="" loading="lazy" decoding="async">
+                        <span>{{ match.category }}</span>
+                    </div>
                     <div class="match-top"><span class="match-score">{{ "%.0f"|format(match.score) }}<small>/100</small></span><span class="status status-available">Available</span></div>
                     <h3>{{ match.food_name }}</h3>
                     <p>{{ match.donor_name }} · {{ match.donor_type }} · {{ match.city }}</p>
