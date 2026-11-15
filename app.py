@@ -265,6 +265,7 @@ def filter_recommendations(recommendations, query):
                 (
                     item["food_name"],
                     item["category"],
+                    item["requested_category"],
                     item["city"],
                     item["donor_name"],
                     item["recipient_name"],
@@ -275,26 +276,31 @@ def filter_recommendations(recommendations, query):
 
     sort_keys = {
         "score": lambda item: (
+            not item["eligible"],
             -item["score"],
             item["expires_at"],
             item["food_name"].casefold(),
         ),
         "expiring": lambda item: (
+            not item["eligible"],
             item["expires_at"],
             -item["score"],
             item["food_name"].casefold(),
         ),
         "urgency": lambda item: (
+            not item["eligible"],
             -item["urgency"],
             -item["score"],
             item["expires_at"],
         ),
         "quantity": lambda item: (
+            not item["eligible"],
             -item["available_quantity"],
             -item["score"],
             item["food_name"].casefold(),
         ),
         "distance": lambda item: (
+            not item["eligible"],
             item["distance_km"] is None,
             item["distance_km"] if item["distance_km"] is not None else math.inf,
             -item["score"],
@@ -885,33 +891,23 @@ def dashboard():
                ORDER BY created_at DESC""",
             (user["id"],),
         ).fetchall()
-        community_requests = db.execute(
-            """SELECT requests.category, requests.remaining_quantity,
-                      requests.quantity_unit, requests.storage_preference,
-                      requests.people_served, requests.urgency,
-                      requests.collection_deadline,
-                      recipients.organization_name AS recipient_name,
-                      recipients.organization_type AS recipient_type,
-                      locations.city
-               FROM requests
-               JOIN recipients ON recipients.user_id = requests.recipient_id
-               LEFT JOIN locations ON locations.user_id = requests.recipient_id
-               WHERE requests.status IN ('open', 'partially_fulfilled')
-               ORDER BY requests.urgency DESC, requests.created_at ASC"""
-        ).fetchall()
         recommendations = []
         route_errors = []
         for donation in donations:
             if donation["status"] in ("available", "partially_allocated"):
                 recommendations.extend(
                     get_recommendations(
-                        db, donation=donation, route_errors=route_errors
+                        db,
+                        donation=donation,
+                        route_errors=route_errors,
+                        include_ineligible=True,
                     )
                 )
         if route_errors:
             flash(
                 "Some distances could not be calculated because the map service "
-                "is temporarily unavailable. Those matches were not shown.",
+                "is temporarily unavailable. Affected candidates have no verified "
+                "distance and cannot be allocated.",
                 "error",
             )
         recommendation_total = len(recommendations)
@@ -945,7 +941,6 @@ def dashboard():
             profile=profile,
             metrics=donor_metrics,
             donations=donations,
-            community_requests=community_requests,
             recommendations=recommendations,
             recommendation_total=recommendation_total,
             recommendation_filters=recommendation_filters,
@@ -966,21 +961,6 @@ def dashboard():
            ORDER BY created_at DESC""",
         (user["id"],),
     ).fetchall()
-    available_donations = db.execute(
-        """SELECT donations.food_name, donations.category,
-                  donations.remaining_quantity, donations.quantity_unit,
-                  donations.storage_method, donations.packaging,
-                  donations.prepared_at, donations.dietary_tags,
-                  donations.allergens, donations.expires_at,
-                  donors.organization_name AS donor_name,
-                  donors.organization_type AS donor_type, locations.city
-           FROM donations
-           JOIN donors ON donors.user_id = donations.donor_id
-           LEFT JOIN locations ON locations.user_id = donations.donor_id
-           WHERE donations.status IN ('available', 'partially_allocated')
-             AND donations.safety_confirmed = 1
-           ORDER BY donations.created_at ASC"""
-    ).fetchall()
     recommendations = []
     route_errors = []
     for food_request in requests:
@@ -990,12 +970,14 @@ def dashboard():
                     db,
                     food_request=food_request,
                     route_errors=route_errors,
+                    include_ineligible=True,
                 )
             )
     if route_errors:
         flash(
             "Some distances could not be calculated because the map service "
-            "is temporarily unavailable. Those matches were not shown.",
+            "is temporarily unavailable. Affected candidates have no verified "
+            "distance and cannot be allocated.",
             "error",
         )
     recommendation_total = len(recommendations)
@@ -1028,7 +1010,6 @@ def dashboard():
         profile=profile,
         metrics=recipient_metrics,
         requests=requests,
-        available_donations=available_donations,
         recommendations=recommendations,
         recommendation_total=recommendation_total,
         recommendation_filters=recommendation_filters,

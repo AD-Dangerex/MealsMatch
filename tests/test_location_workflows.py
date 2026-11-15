@@ -129,7 +129,13 @@ class LocationWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 302)
 
-    def _create_donation(self, address, location_consent="yes", category="fruit"):
+    def _create_donation(
+        self,
+        address,
+        location_consent="yes",
+        category="fruit",
+        quantity_unit="kg",
+    ):
         token = self._csrf(self.donor, "/donations/new")
         return self.donor.post(
             "/donations/new",
@@ -138,7 +144,7 @@ class LocationWorkflowTests(unittest.TestCase):
                 "food_name": "Fresh apples",
                 "category": category,
                 "quantity": "20",
-                "quantity_unit": "kg",
+                "quantity_unit": quantity_unit,
                 "dietary_tags": "vegan",
                 "allergens": "",
                 "storage_method": "ambient",
@@ -153,7 +159,7 @@ class LocationWorkflowTests(unittest.TestCase):
             },
         )
 
-    def _create_request(self, address, category="fruit"):
+    def _create_request(self, address, category="fruit", quantity_unit="kg"):
         token = self._csrf(self.recipient, "/requests/new")
         return self.recipient.post(
             "/requests/new",
@@ -161,7 +167,7 @@ class LocationWorkflowTests(unittest.TestCase):
                 "csrf_token": token,
                 "category": category,
                 "quantity": "10",
-                "quantity_unit": "kg",
+                "quantity_unit": quantity_unit,
                 "people_served": "12",
                 "dietary_requirements": "vegan",
                 "excluded_allergens": "",
@@ -253,29 +259,43 @@ class LocationWorkflowTests(unittest.TestCase):
             Coordinates(51.55, -0.1),
         ],
     )
-    def test_counterpart_listings_are_visible_without_an_eligible_match(self, _geocode):
-        self._create_donation("Private donor pickup", category="fruit")
-        self._create_request("Private recipient collection", category="vegetables")
+    @patch("allocation.get_road_route", return_value=RoadRoute(12000, 1800))
+    def test_noneligible_pairs_show_partial_scores_in_matching_engine(
+        self, _route, _geocode
+    ):
+        self._create_donation(
+            "Private donor pickup", category="lunch", quantity_unit="portions"
+        )
+        self._create_request(
+            "Private recipient collection", category="meals", quantity_unit="boxes"
+        )
 
         donor_dashboard = self.donor.get("/dashboard")
         recipient_dashboard = self.recipient.get("/dashboard")
 
-        self.assertIn(b"All open requests", donor_dashboard.data)
-        self.assertIn(b"vegetables", donor_dashboard.data)
-        self.assertLess(
-            donor_dashboard.data.index(b'id="donor-matches"'),
-            donor_dashboard.data.index(b"All open requests"),
+        self.assertIn(b"Recommendations", donor_dashboard.data)
+        self.assertIn(b"meals", donor_dashboard.data)
+        self.assertIn(b"Potential match", donor_dashboard.data)
+        self.assertIn(b"/100 match", donor_dashboard.data)
+        self.assertIn(b"food categories differ", donor_dashboard.data)
+        self.assertIn(b"quantity units differ", donor_dashboard.data)
+        self.assertIn(b"Showing 1 of 1 candidates", donor_dashboard.data)
+        donor_score = re.search(
+            rb'class="match-score">(\d+)<small>/100 match</small>',
+            donor_dashboard.data,
         )
-        self.assertIn(b"All available listings", recipient_dashboard.data)
+        self.assertIsNotNone(donor_score)
+        self.assertGreater(int(donor_score.group(1)), 0)
+        self.assertLess(int(donor_score.group(1)), 100)
+        self.assertNotIn(b"All open requests", donor_dashboard.data)
+        self.assertNotIn(b'action="/allocations"', donor_dashboard.data)
+        self.assertIn(b"Recommendations", recipient_dashboard.data)
         self.assertIn(b"Fresh apples", recipient_dashboard.data)
-        self.assertLess(
-            recipient_dashboard.data.index(b'id="recipient-matches"'),
-            recipient_dashboard.data.index(b"All available listings"),
-        )
+        self.assertIn(b"Potential match", recipient_dashboard.data)
+        self.assertIn(b"/100 match", recipient_dashboard.data)
+        self.assertNotIn(b"All available listings", recipient_dashboard.data)
         self.assertNotIn(b"Private donor pickup", recipient_dashboard.data)
         self.assertNotIn(b"Private recipient collection", donor_dashboard.data)
-        self.assertIn(b"No eligible requests match your active listings right now.", donor_dashboard.data)
-        self.assertIn(b"No suitable food matches your open requests right now.", recipient_dashboard.data)
 
     @patch("allocation.get_road_route", return_value=RoadRoute(12000, 1800))
     @patch(

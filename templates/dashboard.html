@@ -86,26 +86,7 @@
         </section>
 
         <section class="content-panel" id="donor-matches">
-            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Requests and recommendations</h2><p class="panel-caption">Browse all open requests and review the eligible matches calculated for your food listings. Distances use OpenStreetMap data. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>.</p></div></div>
-            {% if community_requests %}
-            <h3>All open requests</h3>
-            <div class="table-wrap"><table>
-                <thead><tr><th>Organisation</th><th>Category</th><th>Still needed</th><th>Storage</th><th>People served</th><th>Urgency</th><th>Deadline</th></tr></thead>
-                <tbody>{% for item in community_requests %}
-                    <tr>
-                        <td>{{ item.recipient_name }}<br><small>{{ item.recipient_type }} · {{ item.city or "Location not provided" }}</small></td>
-                        <td>{{ item.category }}</td>
-                        <td>{{ "%.1f"|format(item.remaining_quantity) }} {{ item.quantity_unit }}</td>
-                        <td>{{ item.storage_preference|capitalize }}</td>
-                        <td>{{ item.people_served }}</td>
-                        <td>{{ item.urgency }}/5</td>
-                        <td>{{ item.collection_deadline|replace("T", " ") }}</td>
-                    </tr>
-                {% endfor %}</tbody>
-            </table></div>
-            {% else %}<div class="empty-state"><p>There are no open requests to match right now.</p></div>{% endif %}
-            <h3>Eligible recommendations</h3>
-            <p class="panel-caption">Search eligible requests, compare driving distance and estimated time, and sort by urgency, quantity, or match score.</p>
+            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Recommendations</h2><p class="panel-caption">Each active request is scored against your food listings. Eligible recommendations appear first; other candidates show their score and what prevents allocation. Only eligible matches can be allocated. Distances use OpenStreetMap data. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>.</p></div></div>
             <form method="get" class="match-filters" role="search" aria-label="Filter recommended requests">
                 <label>Search
                     <input type="search" name="q" maxlength="80" value="{{ recommendation_filters.q }}" placeholder="Food, category, recipient, or city">
@@ -146,7 +127,7 @@
                     <a class="text-button" href="{{ url_for('dashboard') }}#donor-matches">Clear</a>
                 </div>
             </form>
-            <p class="match-count" role="status">Showing {{ recommendations|length }} of {{ recommendation_total }} eligible matches.</p>
+            <p class="match-count" role="status">Showing {{ recommendations|length }} of {{ recommendation_total }} candidates. Scores show weighted fit, not allocation eligibility; eligible matches appear first.</p>
             {% if recommendations %}
             <div class="match-grid">
                 {% for match in recommendations %}
@@ -155,11 +136,12 @@
                         <img src="{{ food_image_url(match.category) }}" alt="" loading="lazy" decoding="async">
                         <span>{{ match.category }}</span>
                     </div>
-                    <div class="match-top"><span class="match-score">{{ "%.0f"|format(match.score) }}<small>/100</small></span><span class="status status-open">Recommended</span></div>
+                    <div class="match-top"><span class="match-score">{{ "%.0f"|format(match.score) }}<small>/100 match</small></span><span class="status status-{{ 'open' if match.eligible else 'potential' }}">{{ "Eligible" if match.eligible else "Potential match" }}</span></div>
                     <h3>{{ match.food_name }} → {{ match.recipient_name }}</h3>
                     <p>{{ match.recipient_type }} · {{ match.city }}</p>
-                    <p class="route-distance">{% if match.distance_km is not none %}🚗 {{ "%.1f"|format(match.distance_km) }} km road distance · about {{ match.duration_minutes }} min · recipient limit {{ match.max_distance_km|round|int }} km{% else %}Road distance unavailable for this legacy listing{% endif %}</p>
-                    <p>{{ match.available_quantity|round(1) }} {{ match.quantity_unit }} available · {{ match.requested_quantity|round(1) }} {{ match.quantity_unit }} requested · supports {{ match.people_served }} people</p>
+                    <p>Listing: {{ match.category }} · Request: {{ match.requested_category }}</p>
+                    <p class="route-distance">{% if match.distance_km is not none %}🚗 {{ "%.1f"|format(match.distance_km) }} km road distance · about {{ match.duration_minutes }} min · recipient limit {{ match.max_distance_km|round|int }} km{% else %}Road distance unavailable{% endif %}</p>
+                    <p>{{ match.available_quantity|round(1) }} {{ match.quantity_unit }} available · {{ match.requested_quantity|round(1) }} {{ match.requested_quantity_unit }} requested · supports {{ match.people_served }} people</p>
                     <p>Urgency {{ match.urgency }}/5 · collect by {{ match.collection_deadline|replace("T", " ") }}</p>
                     <p>Food: {{ match.storage_method }} storage{% if match.packaging %} · {{ match.packaging }}{% endif %}</p>
                     <p>Dietary needs: {{ match.dietary_requirements or "No specific dietary tags requested" }} · Excluded allergens: {{ match.excluded_allergens or "None listed" }}</p>
@@ -167,13 +149,13 @@
                     {% if match.pickup_overlap_start %}
                         <p>Shared pickup window: {{ match.pickup_overlap_start|replace("T", " ") }}–{{ match.pickup_overlap_end[11:] }}</p>
                     {% endif %}
-                    <p class="match-reason">{{ match.explanation }}</p>
+                    <p class="match-reason">{% if match.eligible %}{{ match.explanation }}{% else %}Not eligible for allocation: {{ match.reasons|join("; ") }}.{% endif %}</p>
                     <details class="score-breakdown"><summary>See match score breakdown</summary>
                         {% for key, label in [("quantity", "Quantity"), ("compatibility", "Food compatibility"), ("proximity", "Road distance"), ("timing", "Timing"), ("urgency", "Urgency"), ("fairness", "Fairness")] %}
                             <div class="score-row"><span>{{ label }} <b>{{ "%.0f"|format(match.components[key]) }}/100 · +{{ "%.1f"|format(match.weighted_components[key]) }} points</b></span><div class="score-track"><i style="width: {{ match.components[key] }}%"></i></div></div>
                         {% endfor %}
                     </details>
-                    <form method="post" action="{{ url_for('create_allocation') }}" class="allocation-form">
+                    {% if match.eligible %}<form method="post" action="{{ url_for('create_allocation') }}" class="allocation-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="donation_id" value="{{ match.donation_id }}">
                         <input type="hidden" name="request_id" value="{{ match.request_id }}">
@@ -181,17 +163,17 @@
                             <input type="number" name="quantity" min="0.1" max="{{ [match.available_quantity, match.requested_quantity]|min }}" step="0.1" value="{{ [match.available_quantity, match.requested_quantity]|min }}" required>
                         </label>
                         <button class="small-button" type="submit">Record allocation</button>
-                    </form>
+                    </form>{% endif %}
                 </article>
                 {% endfor %}
             </div>
             {% else %}
                 <div class="empty-state">
                     {% if recommendation_total %}
-                        <p>No eligible requests match these filters.</p>
+                        <p>No candidates match these filters.</p>
                         <a href="{{ url_for('dashboard') }}#donor-matches">Clear filters and show all matches</a>
                     {% else %}
-                        <p>No eligible requests match your active listings right now.</p>
+                        <p>No active requests can be compared with your listings right now.</p>
                     {% endif %}
                 </div>
             {% endif %}
@@ -243,26 +225,7 @@
         </section>
 
         <section class="content-panel" id="recipient-matches">
-            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Food listings and matches</h2><p class="panel-caption">Browse all available listings and see which ones meet your request requirements. Routes and estimated drive times use OpenStreetMap data. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>.</p></div></div>
-            {% if available_donations %}
-            <h3>All available listings</h3>
-            <div class="table-wrap"><table>
-                <thead><tr><th>Food</th><th>Donor</th><th>Category</th><th>Available</th><th>Storage</th><th>Dietary tags</th><th>Use by</th></tr></thead>
-                <tbody>{% for item in available_donations %}
-                    <tr>
-                        <td><strong>{{ item.food_name }}</strong><br><small>{{ item.packaging or "Packaging not specified" }}</small></td>
-                        <td>{{ item.donor_name }}<br><small>{{ item.donor_type }} · {{ item.city or "Location not provided" }}</small></td>
-                        <td>{{ item.category }}</td>
-                        <td>{{ "%.1f"|format(item.remaining_quantity) }} {{ item.quantity_unit }}</td>
-                        <td>{{ item.storage_method|capitalize }}</td>
-                        <td>{{ item.dietary_tags or "None listed" }}{% if item.allergens %}<br><small>Allergens: {{ item.allergens }}</small>{% endif %}</td>
-                        <td>{{ item.expires_at|replace("T", " ") }}</td>
-                    </tr>
-                {% endfor %}</tbody>
-            </table></div>
-            {% else %}<div class="empty-state"><p>There are no available listings to match right now.</p></div>{% endif %}
-            <h3>Eligible matches</h3>
-            <p class="panel-caption">Search and sort listings that meet your request requirements, including your road-distance limit.</p>
+            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Recommendations</h2><p class="panel-caption">Each available food listing is scored against your requests. Eligible recommendations appear first; other candidates show their score and what prevents allocation. Distances use OpenStreetMap data. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>.</p></div></div>
             <form method="get" class="match-filters" role="search" aria-label="Filter available food matches">
                 <label>Search
                     <input type="search" name="q" maxlength="80" value="{{ recommendation_filters.q }}" placeholder="Food, category, donor, or city">
@@ -303,7 +266,7 @@
                     <a class="text-button" href="{{ url_for('dashboard') }}#recipient-matches">Clear</a>
                 </div>
             </form>
-            <p class="match-count" role="status">Showing {{ recommendations|length }} of {{ recommendation_total }} eligible matches.</p>
+            <p class="match-count" role="status">Showing {{ recommendations|length }} of {{ recommendation_total }} candidates. Scores show weighted fit, not allocation eligibility; eligible matches appear first.</p>
             {% if recommendations %}
             <div class="match-grid">{% for match in recommendations %}
                 <article class="match-card">
@@ -311,11 +274,12 @@
                         <img src="{{ food_image_url(match.category) }}" alt="" loading="lazy" decoding="async">
                         <span>{{ match.category }}</span>
                     </div>
-                    <div class="match-top"><span class="match-score">{{ "%.0f"|format(match.score) }}<small>/100</small></span><span class="status status-available">Available</span></div>
+                    <div class="match-top"><span class="match-score">{{ "%.0f"|format(match.score) }}<small>/100 match</small></span><span class="status status-{{ 'available' if match.eligible else 'potential' }}">{{ "Eligible" if match.eligible else "Potential match" }}</span></div>
                     <h3>{{ match.food_name }}</h3>
                     <p>{{ match.donor_name }} · {{ match.donor_type }} · {{ match.city }}</p>
+                    <p>Food listing: {{ match.category }} · Your request: {{ match.requested_category }}</p>
                     <p class="route-distance">{% if match.distance_km is not none %}{{ "%.1f"|format(match.distance_km) }} km road distance · about {{ match.duration_minutes }} min{% else %}Road distance unavailable{% endif %}</p>
-                    <p>{{ match.available_quantity|round(1) }} {{ match.quantity_unit }} available · your request: {{ match.requested_quantity|round(1) }} {{ match.quantity_unit }}</p>
+                    <p>{{ match.available_quantity|round(1) }} {{ match.quantity_unit }} available · your request: {{ match.requested_quantity|round(1) }} {{ match.requested_quantity_unit }}</p>
                     <p>{{ match.storage_method|capitalize }} storage{% if match.packaging %} · {{ match.packaging }}{% endif %}</p>
                     <p>Prepared: {{ match.prepared_at|replace("T", " ") if match.prepared_at else "Not provided" }} · use by {{ match.expires_at|replace("T", " ") }}</p>
                     <p>Dietary tags: {{ match.dietary_tags or "None listed" }} · declared allergens: {{ match.allergens or "None listed" }}</p>
@@ -323,7 +287,7 @@
                     {% if match.pickup_overlap_start %}
                         <p>Shared pickup window: {{ match.pickup_overlap_start|replace("T", " ") }}–{{ match.pickup_overlap_end[11:] }}</p>
                     {% endif %}
-                    <p class="match-reason">{{ match.explanation }}</p>
+                    <p class="match-reason">{% if match.eligible %}{{ match.explanation }}{% else %}Not eligible for allocation: {{ match.reasons|join("; ") }}.{% endif %}</p>
                     <details class="score-breakdown"><summary>See match score breakdown</summary>
                         {% for key, label in [("quantity", "Quantity"), ("compatibility", "Food compatibility"), ("proximity", "Road distance"), ("timing", "Timing"), ("urgency", "Urgency"), ("fairness", "Fairness")] %}
                             <div class="score-row"><span>{{ label }} <b>{{ "%.0f"|format(match.components[key]) }}/100 · +{{ "%.1f"|format(match.weighted_components[key]) }} points</b></span><div class="score-track"><i style="width: {{ match.components[key] }}%"></i></div></div>
@@ -334,10 +298,10 @@
             {% else %}
                 <div class="empty-state">
                     {% if recommendation_total %}
-                        <p>No available food matches these filters.</p>
+                        <p>No candidates match these filters.</p>
                         <a href="{{ url_for('dashboard') }}#recipient-matches">Clear filters and show all matches</a>
                     {% else %}
-                        <p>No suitable food matches your open requests right now.</p>
+                        <p>No available food can be compared with your requests right now.</p>
                     {% endif %}
                 </div>
             {% endif %}

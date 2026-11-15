@@ -29,17 +29,16 @@ Open `http://127.0.0.1:5000`. The app creates its SQLite database in the
 - Recipients submit requests with quantity units, expected people supported,
   dietary requirements, excluded allergens, storage preference, urgency,
   preferred pickup window, deadline, and collection notes.
-- The engine rejects expired or incompatible pairs, then ranks eligible pairs
-  with quantity (25%), food compatibility (20%), road-distance proximity
-  (20%), timing (15%), urgency (10%), and recent allocation fairness (10%).
-  Pickup windows must overlap. A dashboard breakdown shows each score
-  component.
-- Search all eligible matches by food, category, participant, or city; filter by
-  category, storage, and distance; and sort by match score, nearest route,
-  urgency, expiry, or quantity.
-- Donor and recipient matching engines list active community requests and
-  available food listings, including entries that do not currently qualify as
-  a match. Allocations remain limited to eligible recommended matches.
+- The engine scores active listing/request pairs with quantity (25%), food
+  compatibility (20%), road-distance proximity (20%), timing (15%), urgency
+  (10%), and recent allocation fairness (10%). Eligible pairs rank first;
+  other pairs show a partial score and the requirements they fail. Pickup
+  windows must overlap for a pair to be eligible.
+- Search and filter recommendations by food, category, participant, city,
+  storage, and distance; sort by match score, nearest route, urgency, expiry,
+  or quantity. Match cards show the component breakdown.
+- Allocations remain limited to eligible recommended matches, even when a
+  partial candidate has a score.
 - Donors can record and extend partial allocations. Both parties can confirm collection.
 - Deleting a food listing or request permanently deletes its related allocation
   records; pending quantities are returned to the other listing.
@@ -109,11 +108,12 @@ distance or sort by nearest route.
 
 The route-proximity component is `max(0, 100 × (1 − road_distance /
 recipient_limit))`. Category, unit, storage, dietary, allergen, availability,
-expiry, deadline, and pickup-window checks remain hard eligibility rules. The
-other score components are quantity fit (25%), food compatibility (20%),
-timing (15%), urgency (10%), and allocation fairness (10%), for a total of
-100%. Match cards show the driving distance, estimated minutes, and weighted
-component breakdown.
+expiry, deadline, and pickup-window checks remain hard eligibility rules. A
+partial candidate can still receive a score for its matching components, but
+the card explains failed requirements and cannot be allocated. The other score
+components are quantity fit (25%), food compatibility (20%), timing (15%),
+urgency (10%), and allocation fairness (10%), for a total of 100%. Match cards
+show the driving distance, estimated minutes, and weighted component breakdown.
 
 Exact addresses are stored with their listing/request and are never included
 in public match cards. They are shown to both matched participants only after

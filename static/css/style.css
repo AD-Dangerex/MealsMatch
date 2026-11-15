@@ -1194,6 +1194,11 @@ td {
     color: #28563A;
 }
 
+.status-potential {
+    background: #FFF1D8;
+    color: #76520F;
+}
+
 .status-fully_allocated,
 .status-fulfilled,
 .status-collected {

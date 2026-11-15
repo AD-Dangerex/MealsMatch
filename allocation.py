@@ -218,6 +218,215 @@ def score_match(db, donation, food_request, cache_routes=True):
     }
 
 
+def score_partial_match(
+    db,
+    donation,
+    food_request,
+    cache_routes=True,
+    route_error=None,
+    route_errors=None,
+):
+    prior_allocation = db.execute(
+        """SELECT status FROM allocations
+           WHERE donation_id = ? AND request_id = ?""",
+        (donation["id"], food_request["id"]),
+    ).fetchone()
+    if prior_allocation and prior_allocation["status"] == "collected":
+        return None
+
+    reasons = []
+    category_matches = (
+        donation["category"].casefold() == food_request["category"].casefold()
+    )
+    unit_matches = donation["quantity_unit"] == food_request["quantity_unit"]
+    storage_matches = (
+        food_request["storage_preference"] == "any"
+        or donation["storage_method"] == food_request["storage_preference"]
+    )
+    dietary_matches = csv_values(food_request["dietary_requirements"]).issubset(
+        csv_values(donation["dietary_tags"])
+    )
+    allergens_match = not csv_values(food_request["excluded_allergens"]).intersection(
+        csv_values(donation["allergens"])
+    )
+    safety_confirmed = bool(donation["safety_confirmed"])
+
+    if not category_matches:
+        reasons.append("food categories differ")
+    if not unit_matches:
+        reasons.append("quantity units differ")
+    if not storage_matches:
+        reasons.append("storage requirements differ")
+    if not dietary_matches:
+        reasons.append("dietary requirements are not met")
+    if not allergens_match:
+        reasons.append("excluded allergens are present")
+    if not safety_confirmed:
+        reasons.append("food safety has not been confirmed")
+    if donation["remaining_quantity"] <= 0 or food_request["remaining_quantity"] <= 0:
+        reasons.append("no quantity remains")
+
+    quantity_score = 0.0
+    if (
+        unit_matches
+        and donation["remaining_quantity"] > 0
+        and food_request["remaining_quantity"] > 0
+    ):
+        quantity_score = min(
+            100.0,
+            donation["remaining_quantity"] / food_request["remaining_quantity"] * 100,
+        )
+
+    compatibility_checks = (
+        category_matches,
+        storage_matches,
+        dietary_matches,
+        allergens_match,
+        safety_confirmed,
+    )
+    compatibility_score = (
+        100.0 * sum(compatibility_checks) / len(compatibility_checks)
+    )
+
+    now = datetime.now()
+    expires_at = None
+    deadline = None
+    timing_score = 0.0
+    try:
+        expires_at = parse_time(donation["expires_at"])
+        deadline = parse_time(food_request["collection_deadline"])
+    except (TypeError, ValueError):
+        reasons.append("expiry or collection deadline is invalid")
+    else:
+        if expires_at <= now:
+            reasons.append("food has expired")
+        if deadline <= now:
+            reasons.append("collection deadline has passed")
+        if expires_at < deadline:
+            reasons.append("food expires before the collection deadline")
+
+    pickup_overlap_start = None
+    pickup_overlap_end = None
+    pickup_values = (
+        donation["pickup_start"],
+        donation["pickup_end"],
+        food_request["pickup_start"],
+        food_request["pickup_end"],
+    )
+    if not all(pickup_values):
+        reasons.append("pickup windows are incomplete")
+    else:
+        try:
+            pickup_overlap_start = max(
+                parse_time(donation["pickup_start"]),
+                parse_time(food_request["pickup_start"]),
+            )
+            pickup_overlap_end = min(
+                parse_time(donation["pickup_end"]),
+                parse_time(food_request["pickup_end"]),
+            )
+        except (TypeError, ValueError):
+            reasons.append("pickup windows are invalid")
+        else:
+            if pickup_overlap_start >= pickup_overlap_end:
+                reasons.append("pickup windows do not overlap")
+                pickup_overlap_start = None
+                pickup_overlap_end = None
+
+    if (
+        expires_at is not None
+        and deadline is not None
+        and expires_at > now
+        and deadline > now
+        and expires_at >= deadline
+        and pickup_overlap_start is not None
+    ):
+        hours_after_deadline = max(
+            0.0, (expires_at - deadline).total_seconds() / 3600
+        )
+        timing_score = max(
+            0.0, 100.0 - max(0.0, hours_after_deadline - 24) / 3.36
+        )
+        overlap_hours = (
+            pickup_overlap_end - pickup_overlap_start
+        ).total_seconds() / 3600
+        timing_score = min(
+            100.0,
+            timing_score * 0.75 + min(100, overlap_hours * 10) * 0.25,
+        )
+
+    max_distance_km = float(food_request["max_distance_km"] or 25)
+    distance_km = None
+    duration_minutes = None
+    proximity_score = 0.0
+    route_coordinates = (
+        donation["pickup_latitude"],
+        donation["pickup_longitude"],
+        food_request["collection_latitude"],
+        food_request["collection_longitude"],
+    )
+    if any(value is None for value in route_coordinates):
+        reasons.append("a pickup or collection location is missing")
+    elif route_error is not None:
+        reasons.append("driving distance could not be verified")
+    else:
+        try:
+            route = route_distance(
+                db, donation, food_request, cache_routes=cache_routes
+            )
+        except MapServiceError as error:
+            route = None
+            route_error = error
+            if route_errors is not None and not route_errors:
+                route_errors.append(error)
+            reasons.append("driving distance could not be verified")
+        if route is None:
+            if route_error is None:
+                reasons.append("no drivable route was found")
+        else:
+            distance_km = route["distance_meters"] / 1000
+            duration_minutes = round(route["duration_seconds"] / 60)
+            if distance_km > max_distance_km:
+                reasons.append("road distance exceeds the request limit")
+            else:
+                proximity_score = max(
+                    0.0, 100.0 * (1.0 - distance_km / max_distance_km)
+                )
+
+    recent_allocations = db.execute(
+        """SELECT COUNT(*) AS allocation_count FROM allocations
+           WHERE request_id IN (
+               SELECT id FROM requests WHERE recipient_id = ?
+           ) AND created_at >= datetime('now', '-30 days')""",
+        (food_request["recipient_id"],),
+    ).fetchone()["allocation_count"]
+    fairness_score = 100.0 / (1 + recent_allocations)
+    components = {
+        "quantity": quantity_score,
+        "compatibility": compatibility_score,
+        "proximity": proximity_score,
+        "timing": timing_score,
+        "urgency": food_request["urgency"] * 20.0,
+        "fairness": fairness_score,
+    }
+    score = sum(components[key] * WEIGHTS[key] for key in WEIGHTS)
+    return {
+        "score": round(score, 2),
+        "components": components,
+        "weighted_components": {
+            key: round(components[key] * WEIGHTS[key], 2) for key in WEIGHTS
+        },
+        "explanation": "Potential match; review the listed requirements before allocating.",
+        "pickup_overlap_start": pickup_overlap_start,
+        "pickup_overlap_end": pickup_overlap_end,
+        "distance_km": round(distance_km, 2) if distance_km is not None else None,
+        "duration_minutes": duration_minutes,
+        "max_distance_km": max_distance_km,
+        "eligible": False,
+        "reasons": reasons,
+    }
+
+
 def get_recommendations(
     db,
     donation=None,
@@ -225,6 +434,7 @@ def get_recommendations(
     limit=None,
     route_errors=None,
     cache_routes=True,
+    include_ineligible=False,
 ):
     if donation is None and food_request is None:
         return []
@@ -232,35 +442,47 @@ def get_recommendations(
     if donation is not None and food_request is not None:
         pairs = [(donation, food_request)]
     elif donation is not None:
+        request_query = """SELECT requests.*, recipients.organization_name AS recipient_name,
+                                  recipients.organization_type AS recipient_type
+                           FROM requests
+                           JOIN recipients ON recipients.user_id = requests.recipient_id
+                           WHERE requests.status IN ('open', 'partially_fulfilled')"""
+        request_parameters = ()
+        if not include_ineligible:
+            request_query += " AND requests.category = ? AND requests.quantity_unit = ?"
+            request_parameters = (donation["category"], donation["quantity_unit"])
         requests = db.execute(
-            """SELECT requests.*, recipients.organization_name AS recipient_name,
-                      recipients.organization_type AS recipient_type
-               FROM requests
-               JOIN recipients ON recipients.user_id = requests.recipient_id
-               WHERE requests.category = ? AND requests.quantity_unit = ?
-                 AND requests.status IN ('open', 'partially_fulfilled')
-               ORDER BY requests.urgency DESC, requests.created_at ASC""",
-            (donation["category"], donation["quantity_unit"]),
+            request_query + " ORDER BY requests.urgency DESC, requests.created_at ASC",
+            request_parameters,
         ).fetchall()
         pairs = [(donation, item) for item in requests]
     else:
+        donation_query = """SELECT donations.*, donors.organization_name AS donor_name,
+                                   donors.organization_type AS donor_type,
+                                   donors.phone AS donor_phone, locations.city AS donor_city
+                            FROM donations
+                            JOIN donors ON donors.user_id = donations.donor_id
+                            LEFT JOIN locations ON locations.user_id = donations.donor_id
+                            WHERE donations.status IN ('available', 'partially_allocated')
+                              AND donations.safety_confirmed = 1"""
+        donation_parameters = ()
+        if not include_ineligible:
+            donation_query += (
+                " AND donations.category = ? AND donations.quantity_unit = ?"
+            )
+            donation_parameters = (
+                food_request["category"],
+                food_request["quantity_unit"],
+            )
         donations = db.execute(
-            """SELECT donations.*, donors.organization_name AS donor_name,
-                      donors.organization_type AS donor_type, donors.phone AS donor_phone,
-                      locations.city AS donor_city
-               FROM donations
-               JOIN donors ON donors.user_id = donations.donor_id
-               LEFT JOIN locations ON locations.user_id = donations.donor_id
-               WHERE donations.category = ?
-                 AND donations.quantity_unit = ?
-                 AND donations.status IN ('available', 'partially_allocated')
-               ORDER BY donations.created_at ASC""",
-            (food_request["category"], food_request["quantity_unit"]),
+            donation_query + " ORDER BY donations.created_at ASC",
+            donation_parameters,
         ).fetchall()
         pairs = [(item, food_request) for item in donations]
 
     results = []
     for available_food, request_item in pairs:
+        route_error = None
         try:
             result = score_match(
                 db,
@@ -271,7 +493,18 @@ def get_recommendations(
         except MapServiceError as error:
             if route_errors is not None and not route_errors:
                 route_errors.append(error)
-            continue
+            route_error = error
+            result = None
+        eligible = result is not None
+        if result is None and include_ineligible:
+            result = score_partial_match(
+                db,
+                available_food,
+                request_item,
+                cache_routes=cache_routes,
+                route_error=route_error,
+                route_errors=route_errors,
+            )
         if result is None:
             continue
         results.append(
@@ -280,9 +513,11 @@ def get_recommendations(
                 "request_id": request_item["id"],
                 "food_name": available_food["food_name"],
                 "category": available_food["category"],
+                "requested_category": request_item["category"],
                 "available_quantity": available_food["remaining_quantity"],
                 "requested_quantity": request_item["remaining_quantity"],
                 "quantity_unit": available_food["quantity_unit"],
+                "requested_quantity_unit": request_item["quantity_unit"],
                 "storage_method": available_food["storage_method"],
                 "packaging": available_food["packaging"],
                 "prepared_at": available_food["prepared_at"],
@@ -347,9 +582,17 @@ def get_recommendations(
                 "distance_km": result["distance_km"],
                 "duration_minutes": result["duration_minutes"],
                 "max_distance_km": result["max_distance_km"],
+                "eligible": eligible,
+                "reasons": result.get("reasons", []),
             }
         )
-    results.sort(key=lambda item: (-item["score"], item["food_name"].casefold()))
+    results.sort(
+        key=lambda item: (
+            not item["eligible"],
+            -item["score"],
+            item["food_name"].casefold(),
+        )
+    )
     return results if limit is None else results[:limit]
 
 
