@@ -411,6 +411,26 @@ class LocationWorkflowTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_legacy_cancelled_listings_are_not_shown_on_dashboards(self):
+        self._create_donation("Private donor pickup")
+        self._create_request("Private recipient collection")
+        db = sqlite3.connect(self.database_path)
+        try:
+            db.execute("UPDATE donations SET status = 'cancelled'")
+            db.execute("UPDATE requests SET status = 'cancelled'")
+            db.commit()
+        finally:
+            db.close()
+
+        donor_dashboard = self.donor.get("/dashboard")
+        recipient_dashboard = self.recipient.get("/dashboard")
+
+        self.assertNotIn(b"Fresh apples", donor_dashboard.data)
+        self.assertNotIn(b"Private donor pickup", donor_dashboard.data)
+        self.assertNotIn(b"Private recipient collection", recipient_dashboard.data)
+        self.assertNotIn(b"status-cancelled", donor_dashboard.data)
+        self.assertNotIn(b"status-cancelled", recipient_dashboard.data)
+
     def test_request_rejects_distance_outside_supported_range(self):
         token = self._csrf(self.recipient, "/requests/new")
         with patch("app.geocode_address") as geocode:

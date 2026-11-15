@@ -881,7 +881,7 @@ def dashboard():
         donations = db.execute(
             """SELECT donations.*,
                       (SELECT COUNT(*) FROM allocations WHERE donation_id = donations.id) AS allocation_count
-               FROM donations WHERE donor_id = ?
+               FROM donations WHERE donor_id = ? AND status != 'cancelled'
                ORDER BY created_at DESC""",
             (user["id"],),
         ).fetchall()
@@ -961,7 +961,8 @@ def dashboard():
         (user["id"],),
     ).fetchone()
     requests = db.execute(
-        """SELECT * FROM requests WHERE recipient_id = ?
+        """SELECT * FROM requests
+           WHERE recipient_id = ? AND status != 'cancelled'
            ORDER BY created_at DESC""",
         (user["id"],),
     ).fetchall()
