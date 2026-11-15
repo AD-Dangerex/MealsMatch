@@ -1462,18 +1462,73 @@ def mark_collected(allocation_id):
 @role_required("donor")
 def cancel_donation(donation_id):
     db = connect_db()
-    cursor = db.execute(
-        """UPDATE donations SET status = 'cancelled'
-           WHERE id = ? AND donor_id = ?
-             AND status IN ('available', 'partially_allocated')""",
-        (donation_id, g.user["id"]),
-    )
-    if cursor.rowcount == 0:
-        flash("That listing cannot be cancelled.", "error")
-    else:
-        audit(db, g.user["id"], "cancelled", "donation", donation_id)
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        donation = select_for_update(
+            db,
+            """SELECT id, status FROM donations
+               WHERE id = ? AND donor_id = ?
+                 AND status IN ('available', 'partially_allocated')""",
+            (donation_id, g.user["id"]),
+        ).fetchone()
+        if donation is None:
+            db.rollback()
+            flash("That listing cannot be deleted.", "error")
+            return redirect(url_for("dashboard"))
+
+        allocations = select_for_update(
+            db,
+            """SELECT id, request_id, allocated_quantity, status
+               FROM allocations WHERE donation_id = ?""",
+            (donation_id,),
+        ).fetchall()
+        for allocation in allocations:
+            if allocation["status"] != "pending":
+                continue
+            food_request = select_for_update(
+                db,
+                """SELECT id, quantity, remaining_quantity, status
+                   FROM requests WHERE id = ?""",
+                (allocation["request_id"],),
+            ).fetchone()
+            remaining_quantity = min(
+                food_request["quantity"],
+                round(
+                    food_request["remaining_quantity"]
+                    + allocation["allocated_quantity"],
+                    1,
+                ),
+            )
+            status = food_request["status"]
+            if status != "cancelled":
+                status = (
+                    "open"
+                    if remaining_quantity >= food_request["quantity"]
+                    else "partially_fulfilled"
+                )
+            db.execute(
+                """UPDATE requests SET remaining_quantity = ?, status = ?
+                   WHERE id = ?""",
+                (remaining_quantity, status, food_request["id"]),
+            )
+
+        db.execute("DELETE FROM allocations WHERE donation_id = ?", (donation_id,))
+        db.execute("DELETE FROM donations WHERE id = ?", (donation_id,))
+        audit(
+            db,
+            g.user["id"],
+            "deleted",
+            "donation",
+            donation_id,
+            f"Deleted listing and {len(allocations)} allocation records",
+        )
         db.commit()
-        flash("The remaining food listing has been cancelled.", "success")
+    except DATABASE_ERRORS:
+        db.rollback()
+        app.logger.exception("Could not delete food listing")
+        flash("The food listing could not be deleted. Please try again.", "error")
+    else:
+        flash("The food listing and its allocation history were deleted.", "success")
     return redirect(url_for("dashboard"))
 
 
@@ -1481,18 +1536,74 @@ def cancel_donation(donation_id):
 @role_required("recipient")
 def cancel_request(request_id):
     db = connect_db()
-    cursor = db.execute(
-        """UPDATE requests SET status = 'cancelled'
-           WHERE id = ? AND recipient_id = ?
-             AND status IN ('open', 'partially_fulfilled')""",
-        (request_id, g.user["id"]),
-    )
-    if cursor.rowcount == 0:
-        flash("That request cannot be cancelled.", "error")
-    else:
-        audit(db, g.user["id"], "cancelled", "request", request_id)
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        food_request = select_for_update(
+            db,
+            """SELECT id, recipient_id, status
+               FROM requests
+               WHERE id = ? AND recipient_id = ?
+                 AND status IN ('open', 'partially_fulfilled')""",
+            (request_id, g.user["id"]),
+        ).fetchone()
+        if food_request is None:
+            db.rollback()
+            flash("That request cannot be deleted.", "error")
+            return redirect(url_for("dashboard"))
+
+        allocations = select_for_update(
+            db,
+            """SELECT id, donation_id, allocated_quantity, status
+               FROM allocations WHERE request_id = ?""",
+            (request_id,),
+        ).fetchall()
+        for allocation in allocations:
+            if allocation["status"] != "pending":
+                continue
+            donation = select_for_update(
+                db,
+                """SELECT id, quantity, remaining_quantity, status
+                   FROM donations WHERE id = ?""",
+                (allocation["donation_id"],),
+            ).fetchone()
+            remaining_quantity = min(
+                donation["quantity"],
+                round(
+                    donation["remaining_quantity"]
+                    + allocation["allocated_quantity"],
+                    1,
+                ),
+            )
+            status = donation["status"]
+            if status != "cancelled":
+                status = (
+                    "available"
+                    if remaining_quantity >= donation["quantity"]
+                    else "partially_allocated"
+                )
+            db.execute(
+                """UPDATE donations SET remaining_quantity = ?, status = ?
+                   WHERE id = ?""",
+                (remaining_quantity, status, donation["id"]),
+            )
+
+        db.execute("DELETE FROM allocations WHERE request_id = ?", (request_id,))
+        db.execute("DELETE FROM requests WHERE id = ?", (request_id,))
+        audit(
+            db,
+            g.user["id"],
+            "deleted",
+            "request",
+            request_id,
+            f"Deleted request and {len(allocations)} allocation records",
+        )
         db.commit()
-        flash("The outstanding request has been cancelled.", "success")
+    except DATABASE_ERRORS:
+        db.rollback()
+        app.logger.exception("Could not delete food request")
+        flash("The food request could not be deleted. Please try again.", "error")
+    else:
+        flash("The food request and its allocation history were deleted.", "success")
     return redirect(url_for("dashboard"))
 
 

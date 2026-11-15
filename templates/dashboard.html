@@ -69,9 +69,9 @@
                             <td><span class="status status-{{ item.status }}">{{ item.status|replace("_", " ") }}</span></td>
                             <td>
                                 {% if item.status in ["available", "partially_allocated"] %}
-                                <form method="post" action="{{ url_for('cancel_donation', donation_id=item.id) }}" class="inline-form" onsubmit="return confirm('Cancel the unallocated part of this listing?')">
+                                <form method="post" action="{{ url_for('cancel_donation', donation_id=item.id) }}" class="inline-form" onsubmit="return confirm('Permanently delete this listing and its allocation history?')">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <button class="text-button" type="submit">Cancel</button>
+                                    <button class="text-button" type="submit">Delete</button>
                                 </form>
                                 {% endif %}
                             </td>
@@ -236,7 +236,7 @@
                     <td>{{ item.pickup_start|replace("T", " ") }}–{{ item.pickup_end[11:] }}</td>
                     <td>{{ item.collection_deadline|replace("T", " ") }}</td><td>{{ item.urgency }}/5</td>
                     <td><span class="status status-{{ item.status }}">{{ item.status|replace("_", " ") }}</span></td>
-                    <td>{% if item.status in ["open", "partially_fulfilled"] %}<form method="post" action="{{ url_for('cancel_request', request_id=item.id) }}" class="inline-form" onsubmit="return confirm('Cancel the outstanding part of this request?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-button" type="submit">Cancel</button></form>{% endif %}</td>
+                    <td>{% if item.status in ["open", "partially_fulfilled"] %}<form method="post" action="{{ url_for('cancel_request', request_id=item.id) }}" class="inline-form" onsubmit="return confirm('Permanently delete this request and its allocation history?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-button" type="submit">Delete</button></form>{% endif %}</td>
                 </tr>{% endfor %}</tbody>
             </table></div>
             {% else %}<div class="empty-state"><p>No food requests yet.</p><a href="{{ url_for('new_request') }}">Create your first request →</a></div>{% endif %}

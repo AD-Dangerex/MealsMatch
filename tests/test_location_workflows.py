@@ -277,6 +277,122 @@ class LocationWorkflowTests(unittest.TestCase):
         self.assertIn(b"No eligible requests match your active listings right now.", donor_dashboard.data)
         self.assertIn(b"No suitable food matches your open requests right now.", recipient_dashboard.data)
 
+    @patch("allocation.get_road_route", return_value=RoadRoute(12000, 1800))
+    @patch(
+        "app.geocode_address",
+        side_effect=[
+            Coordinates(51.5, -0.12),
+            Coordinates(51.55, -0.1),
+        ],
+    )
+    def test_deleting_donation_removes_allocations_and_restores_request(
+        self, _geocode, _route
+    ):
+        self._create_donation("Private donor pickup")
+        self._create_request("Private recipient collection")
+        donation, food_request = self._read_rows()
+
+        token = self._csrf(self.donor, "/dashboard")
+        allocation_response = self.donor.post(
+            "/allocations",
+            data={
+                "csrf_token": token,
+                "donation_id": donation["id"],
+                "request_id": food_request["id"],
+                "quantity": "5",
+            },
+            follow_redirects=True,
+        )
+        self.assertIn(b"The allocation was recorded.", allocation_response.data)
+        delete_token = self._csrf(self.donor, "/dashboard")
+        response = self.donor.post(
+            f"/donations/{donation['id']}/cancel",
+            data={"csrf_token": delete_token},
+            follow_redirects=True,
+        )
+
+        self.assertIn(b"food listing and its allocation history were deleted", response.data)
+        db = sqlite3.connect(self.database_path)
+        try:
+            self.assertEqual(
+                db.execute(
+                    "SELECT COUNT(*) FROM donations WHERE id = ?", (donation["id"],)
+                ).fetchone()[0],
+                0,
+            )
+            self.assertEqual(
+                db.execute(
+                    "SELECT COUNT(*) FROM allocations WHERE donation_id = ?",
+                    (donation["id"],),
+                ).fetchone()[0],
+                0,
+            )
+            restored_request = db.execute(
+                "SELECT remaining_quantity, status FROM requests WHERE id = ?",
+                (food_request["id"],),
+            ).fetchone()
+            self.assertEqual(restored_request, (10.0, "open"))
+        finally:
+            db.close()
+
+    @patch("allocation.get_road_route", return_value=RoadRoute(12000, 1800))
+    @patch(
+        "app.geocode_address",
+        side_effect=[
+            Coordinates(51.5, -0.12),
+            Coordinates(51.55, -0.1),
+        ],
+    )
+    def test_deleting_request_removes_allocations_and_restores_donation(
+        self, _geocode, _route
+    ):
+        self._create_donation("Private donor pickup")
+        self._create_request("Private recipient collection")
+        donation, food_request = self._read_rows()
+
+        token = self._csrf(self.donor, "/dashboard")
+        allocation_response = self.donor.post(
+            "/allocations",
+            data={
+                "csrf_token": token,
+                "donation_id": donation["id"],
+                "request_id": food_request["id"],
+                "quantity": "5",
+            },
+            follow_redirects=True,
+        )
+        self.assertIn(b"The allocation was recorded.", allocation_response.data)
+        delete_token = self._csrf(self.recipient, "/dashboard")
+        response = self.recipient.post(
+            f"/requests/{food_request['id']}/cancel",
+            data={"csrf_token": delete_token},
+            follow_redirects=True,
+        )
+
+        self.assertIn(b"food request and its allocation history were deleted", response.data)
+        db = sqlite3.connect(self.database_path)
+        try:
+            self.assertEqual(
+                db.execute(
+                    "SELECT COUNT(*) FROM requests WHERE id = ?", (food_request["id"],)
+                ).fetchone()[0],
+                0,
+            )
+            self.assertEqual(
+                db.execute(
+                    "SELECT COUNT(*) FROM allocations WHERE request_id = ?",
+                    (food_request["id"],),
+                ).fetchone()[0],
+                0,
+            )
+            restored_donation = db.execute(
+                "SELECT remaining_quantity, status FROM donations WHERE id = ?",
+                (donation["id"],),
+            ).fetchone()
+            self.assertEqual(restored_donation, (20.0, "available"))
+        finally:
+            db.close()
+
     def test_request_rejects_distance_outside_supported_range(self):
         token = self._csrf(self.recipient, "/requests/new")
         with patch("app.geocode_address") as geocode:

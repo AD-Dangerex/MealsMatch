@@ -41,6 +41,8 @@ Open `http://127.0.0.1:5000`. The app creates its SQLite database in the
   available food listings, including entries that do not currently qualify as
   a match. Allocations remain limited to eligible recommended matches.
 - Donors can record and extend partial allocations. Both parties can confirm collection.
+- Deleting a food listing or request permanently deletes its related allocation
+  records; pending quantities are returned to the other listing.
 - Admins can review account, allocation, and audit-log information, see
   category-level distribution totals, and download an allocation CSV report.
 
