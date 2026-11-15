@@ -259,6 +259,144 @@ def connect_db():
     return g.db
 
 
+def purge_cancelled_listings(db):
+    cancelled_donations = db.execute(
+        """SELECT id, donor_id FROM donations WHERE status = 'cancelled'"""
+    ).fetchall()
+    for donation in cancelled_donations:
+        allocations = db.execute(
+            """SELECT id, request_id, allocated_quantity, status
+               FROM allocations WHERE donation_id = ?""",
+            (donation["id"],),
+        ).fetchall()
+        for allocation in allocations:
+            if allocation["status"] != "pending":
+                continue
+            food_request = db.execute(
+                """SELECT id, quantity, remaining_quantity, status
+                   FROM requests WHERE id = ?""",
+                (allocation["request_id"],),
+            ).fetchone()
+            if food_request is None:
+                raise RuntimeError(
+                    "A cancelled listing has an allocation to a missing request."
+                )
+            remaining_quantity = min(
+                food_request["quantity"],
+                round(
+                    food_request["remaining_quantity"]
+                    + allocation["allocated_quantity"],
+                    1,
+                ),
+            )
+            status = food_request["status"]
+            if status != "cancelled":
+                status = (
+                    "open"
+                    if remaining_quantity >= food_request["quantity"]
+                    else "partially_fulfilled"
+                )
+            db.execute(
+                """UPDATE requests SET remaining_quantity = ?, status = ?
+                   WHERE id = ?""",
+                (remaining_quantity, status, food_request["id"]),
+            )
+        db.execute(
+            """DELETE FROM audit_logs
+               WHERE entity_type = 'allocation'
+                 AND (
+                     (action = 'allocated' AND entity_id = ?)
+                     OR (
+                         action = 'collected'
+                         AND entity_id IN (
+                             SELECT id FROM allocations WHERE donation_id = ?
+                         )
+                     )
+                 )""",
+            (donation["id"], donation["id"]),
+        )
+        db.execute("DELETE FROM allocations WHERE donation_id = ?", (donation["id"],))
+        db.execute("DELETE FROM donations WHERE id = ?", (donation["id"],))
+        db.execute(
+            """INSERT INTO audit_logs
+               (user_id, action, entity_type, entity_id, details)
+               VALUES (?, 'deleted', 'donation', ?, ?)""",
+            (
+                donation["donor_id"],
+                donation["id"],
+                f"Removed legacy cancelled listing and {len(allocations)} allocation records",
+            ),
+        )
+
+    cancelled_requests = db.execute(
+        """SELECT id, recipient_id FROM requests WHERE status = 'cancelled'"""
+    ).fetchall()
+    for food_request in cancelled_requests:
+        allocations = db.execute(
+            """SELECT id, donation_id, allocated_quantity, status
+               FROM allocations WHERE request_id = ?""",
+            (food_request["id"],),
+        ).fetchall()
+        for allocation in allocations:
+            if allocation["status"] != "pending":
+                continue
+            donation = db.execute(
+                """SELECT id, quantity, remaining_quantity, status
+                   FROM donations WHERE id = ?""",
+                (allocation["donation_id"],),
+            ).fetchone()
+            if donation is None:
+                raise RuntimeError(
+                    "A cancelled request has an allocation to a missing listing."
+                )
+            remaining_quantity = min(
+                donation["quantity"],
+                round(
+                    donation["remaining_quantity"]
+                    + allocation["allocated_quantity"],
+                    1,
+                ),
+            )
+            status = donation["status"]
+            if status != "cancelled":
+                status = (
+                    "available"
+                    if remaining_quantity >= donation["quantity"]
+                    else "partially_allocated"
+                )
+            db.execute(
+                """UPDATE donations SET remaining_quantity = ?, status = ?
+                   WHERE id = ?""",
+                (remaining_quantity, status, donation["id"]),
+            )
+        db.execute(
+            """DELETE FROM audit_logs
+               WHERE entity_type = 'allocation'
+                 AND (
+                     (action = 'allocated' AND details LIKE ?)
+                     OR (
+                         action = 'collected'
+                         AND entity_id IN (
+                             SELECT id FROM allocations WHERE request_id = ?
+                         )
+                     )
+                 )""",
+            (f"%to request {food_request['id']}", food_request["id"]),
+        )
+        db.execute("DELETE FROM allocations WHERE request_id = ?", (food_request["id"],))
+        db.execute("DELETE FROM requests WHERE id = ?", (food_request["id"],))
+        db.execute(
+            """INSERT INTO audit_logs
+               (user_id, action, entity_type, entity_id, details)
+               VALUES (?, 'deleted', 'request', ?, ?)""",
+            (
+                food_request["recipient_id"],
+                food_request["id"],
+                f"Removed legacy cancelled request and {len(allocations)} allocation records",
+            ),
+        )
+
+
 def initialize_database():
     with current_app.app_context():
         db = connect_database()
@@ -269,6 +407,7 @@ def initialize_database():
                 db.execute("PRAGMA foreign_keys = ON")
                 db.executescript(SCHEMA)
             migrate_database(db)
+            purge_cancelled_listings(db)
             db.execute(
                 """CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub
                    ON users(google_sub) WHERE google_sub IS NOT NULL"""

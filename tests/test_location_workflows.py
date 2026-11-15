@@ -422,8 +422,20 @@ class LocationWorkflowTests(unittest.TestCase):
         finally:
             db.close()
 
+        with app_module.app.app_context():
+            from database import initialize_database
+
+            initialize_database()
+
         donor_dashboard = self.donor.get("/dashboard")
         recipient_dashboard = self.recipient.get("/dashboard")
+
+        db = sqlite3.connect(self.database_path)
+        try:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM donations").fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM requests").fetchone()[0], 0)
+        finally:
+            db.close()
 
         self.assertNotIn(b"Fresh apples", donor_dashboard.data)
         self.assertNotIn(b"Private donor pickup", donor_dashboard.data)
