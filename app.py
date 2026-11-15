@@ -224,6 +224,39 @@ def select_for_update(db, query, parameters):
     return db.execute(query, parameters)
 
 
+MATCH_ACCEPTANCE_BLOCKERS = {
+    "quantity units differ",
+    "excluded allergens are present",
+    "food safety has not been confirmed",
+    "food has expired",
+    "food expires before the collection deadline",
+    "expiry or collection deadline is invalid",
+    "collection deadline has passed",
+    "no quantity remains",
+}
+
+
+def attach_match_acceptances(db, recommendations):
+    for recommendation in recommendations:
+        acceptance = db.execute(
+            """SELECT donor_accepted, recipient_accepted
+               FROM match_acceptances
+               WHERE donation_id = ? AND request_id = ?""",
+            (recommendation["donation_id"], recommendation["request_id"]),
+        ).fetchone()
+        recommendation["donor_accepted"] = bool(
+            acceptance and acceptance["donor_accepted"]
+        )
+        recommendation["recipient_accepted"] = bool(
+            acceptance and acceptance["recipient_accepted"]
+        )
+        recommendation["acceptance_blockers"] = [
+            reason
+            for reason in recommendation["reasons"]
+            if reason in MATCH_ACCEPTANCE_BLOCKERS
+        ]
+
+
 def csv_safe(value):
     if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")):
         return "'" + value
@@ -907,9 +940,10 @@ def dashboard():
             flash(
                 "Some distances could not be calculated because the map service "
                 "is temporarily unavailable. Affected candidates have no verified "
-                "distance and cannot be allocated.",
+                "distance; review the locations carefully before accepting.",
                 "error",
             )
+        attach_match_acceptances(db, recommendations)
         recommendation_total = len(recommendations)
         recommendations, recommendation_filters, recommendation_categories = (
             filter_recommendations(recommendations, request.args)
@@ -977,9 +1011,10 @@ def dashboard():
         flash(
             "Some distances could not be calculated because the map service "
             "is temporarily unavailable. Affected candidates have no verified "
-            "distance and cannot be allocated.",
+            "distance; review the locations carefully before accepting.",
             "error",
         )
+    attach_match_acceptances(db, recommendations)
     recommendation_total = len(recommendations)
     recommendations, recommendation_filters, recommendation_categories = (
         filter_recommendations(recommendations, request.args)
@@ -1283,41 +1318,38 @@ def new_request():
     return render_template("form.html", mode="request")
 
 
-@app.post("/allocations")
-@role_required("donor")
-def create_allocation():
-    try:
-        donation_id = int(request.form.get("donation_id", ""))
-        request_id = int(request.form.get("request_id", ""))
-        quantity = float(request.form.get("quantity", ""))
-        if quantity <= 0 or round(quantity, 1) != quantity:
-            raise ValueError
-    except ValueError:
-        flash("Enter a valid allocation quantity.", "error")
-        return redirect(url_for("dashboard"))
+@app.post("/matches/<int:donation_id>/<int:request_id>/accept")
+@role_required("donor", "recipient")
+def accept_match(donation_id, request_id):
+    quantity = None
+    if g.user["role"] == "donor":
+        try:
+            quantity = float(request.form.get("quantity", ""))
+            if not math.isfinite(quantity) or quantity <= 0 or round(quantity, 1) != quantity:
+                raise ValueError
+        except ValueError:
+            flash("Enter a valid quantity to offer.", "error")
+            return redirect(url_for("dashboard"))
 
     db = connect_db()
     try:
         db.execute("BEGIN IMMEDIATE")
         donation = select_for_update(
-            db,
-            """SELECT * FROM donations
-               WHERE id = ? AND donor_id = ?""",
-            (donation_id, g.user["id"]),
+            db, "SELECT * FROM donations WHERE id = ?", (donation_id,)
         ).fetchone()
         food_request = select_for_update(
             db, "SELECT * FROM requests WHERE id = ?", (request_id,)
         ).fetchone()
         if donation is None or food_request is None:
-            raise ValueError("The selected food or request is no longer available.")
+            raise ValueError("The selected listing or request no longer exists.")
+        is_donor = g.user["id"] == donation["donor_id"]
+        is_recipient = g.user["id"] == food_request["recipient_id"]
+        if not (is_donor or is_recipient):
+            raise ValueError("You cannot accept a match for another account.")
         if donation["status"] not in ("available", "partially_allocated") or food_request[
             "status"
         ] not in ("open", "partially_fulfilled"):
-            raise ValueError("That food or request has already been closed.")
-        if quantity > donation["remaining_quantity"] or quantity > food_request[
-            "remaining_quantity"
-        ]:
-            raise ValueError("Quantity exceeds the available food or outstanding request.")
+            raise ValueError("That listing or request is no longer active.")
 
         route_errors = []
         recommendations = get_recommendations(
@@ -1326,12 +1358,114 @@ def create_allocation():
             food_request=food_request,
             route_errors=route_errors,
             cache_routes=False,
+            include_ineligible=True,
         )
         if not recommendations:
-            if route_errors:
-                raise route_errors[0]
-            raise ValueError("This food is not eligible for the selected request.")
+            raise ValueError("This listing and request can no longer be matched.")
         recommendation = recommendations[0]
+        blockers = [
+            reason
+            for reason in recommendation["reasons"]
+            if reason in MATCH_ACCEPTANCE_BLOCKERS
+        ]
+        if blockers:
+            raise ValueError(
+                "This match cannot be accepted because: " + "; ".join(blockers) + "."
+            )
+
+        max_quantity = min(
+            donation["remaining_quantity"], food_request["remaining_quantity"]
+        )
+        if is_donor and quantity > max_quantity:
+            raise ValueError(
+                "The offered quantity exceeds what is currently available or needed."
+            )
+
+        approval = select_for_update(
+            db,
+            """SELECT donor_accepted, recipient_accepted, proposed_quantity
+               FROM match_acceptances
+               WHERE donation_id = ? AND request_id = ?""",
+            (donation_id, request_id),
+        ).fetchone()
+        if approval is None:
+            db.execute(
+                """INSERT INTO match_acceptances
+                   (donation_id, request_id, donor_accepted, recipient_accepted,
+                    proposed_quantity, match_score, explanation)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    donation_id,
+                    request_id,
+                    int(is_donor),
+                    int(is_recipient),
+                    quantity if is_donor else None,
+                    recommendation["score"],
+                    recommendation["explanation"],
+                ),
+            )
+        elif is_donor:
+            db.execute(
+                """UPDATE match_acceptances
+                   SET donor_accepted = 1, proposed_quantity = ?,
+                       match_score = ?, explanation = ?
+                   WHERE donation_id = ? AND request_id = ?""",
+                (
+                    quantity,
+                    recommendation["score"],
+                    recommendation["explanation"],
+                    donation_id,
+                    request_id,
+                ),
+            )
+        else:
+            db.execute(
+                """UPDATE match_acceptances
+                   SET recipient_accepted = 1, match_score = ?, explanation = ?
+                   WHERE donation_id = ? AND request_id = ?""",
+                (
+                    recommendation["score"],
+                    recommendation["explanation"],
+                    donation_id,
+                    request_id,
+                ),
+            )
+
+        approval = db.execute(
+            """SELECT donor_accepted, recipient_accepted, proposed_quantity
+               FROM match_acceptances
+               WHERE donation_id = ? AND request_id = ?""",
+            (donation_id, request_id),
+        ).fetchone()
+        if not (approval["donor_accepted"] and approval["recipient_accepted"]):
+            db.commit()
+            waiting_for = "recipient" if is_donor else "donor"
+            flash(
+                f"Your acceptance was recorded. Waiting for the {waiting_for} to accept.",
+                "success",
+            )
+            return redirect(url_for("dashboard"))
+
+        quantity = approval["proposed_quantity"]
+        if (
+            quantity is None
+            or quantity <= 0
+            or round(quantity, 1) != quantity
+            or quantity > max_quantity
+        ):
+            db.execute(
+                """UPDATE match_acceptances
+                   SET donor_accepted = 0, proposed_quantity = NULL
+                   WHERE donation_id = ? AND request_id = ?""",
+                (donation_id, request_id),
+            )
+            db.commit()
+            flash(
+                "The available quantity changed. The donor must accept again with an updated amount.",
+                "error",
+            )
+            return redirect(url_for("dashboard"))
+
         existing = db.execute(
             """SELECT id, status FROM allocations
                WHERE donation_id = ? AND request_id = ?""",
@@ -1365,12 +1499,15 @@ def create_allocation():
                     recommendation["explanation"],
                 ),
             )
-        donation_remaining = round(donation["remaining_quantity"] - quantity, 1)
-        request_remaining = round(food_request["remaining_quantity"] - quantity, 1)
-        donation_remaining = max(0, donation_remaining)
-        request_remaining = max(0, request_remaining)
-        donation_status = "fully_allocated" if donation_remaining <= 0 else "partially_allocated"
-        request_status = "fulfilled" if request_remaining <= 0 else "partially_fulfilled"
+
+        donation_remaining = max(0, round(donation["remaining_quantity"] - quantity, 1))
+        request_remaining = max(0, round(food_request["remaining_quantity"] - quantity, 1))
+        donation_status = (
+            "fully_allocated" if donation_remaining <= 0 else "partially_allocated"
+        )
+        request_status = (
+            "fulfilled" if request_remaining <= 0 else "partially_fulfilled"
+        )
         db.execute(
             "UPDATE donations SET remaining_quantity = ?, status = ? WHERE id = ?",
             (donation_remaining, donation_status, donation_id),
@@ -1385,27 +1522,25 @@ def create_allocation():
             "allocated",
             "allocation",
             donation_id,
-            f"{quantity:g} units allocated to request {request_id}",
+            f"{quantity:g} units allocated to request {request_id} after mutual acceptance",
+        )
+        db.execute(
+            """DELETE FROM match_acceptances
+               WHERE donation_id = ? AND request_id = ?""",
+            (donation_id, request_id),
         )
         db.commit()
     except ValueError as error:
         db.rollback()
         flash(str(error), "error")
         return redirect(url_for("dashboard"))
-    except MapServiceError as error:
-        db.rollback()
-        flash(
-            f"The allocation could not be verified because routing failed: {error}",
-            "error",
-        )
-        return redirect(url_for("dashboard"))
     except DATABASE_ERRORS:
         db.rollback()
-        app.logger.exception("Could not save food allocation")
-        flash("The allocation could not be saved. Please try again.", "error")
+        app.logger.exception("Could not record match acceptance")
+        flash("Your acceptance could not be saved. Please try again.", "error")
         return redirect(url_for("dashboard"))
 
-    flash("The allocation was recorded.", "success")
+    flash("Both sides accepted. The allocation has been recorded.", "success")
     return redirect(url_for("dashboard"))
 
 

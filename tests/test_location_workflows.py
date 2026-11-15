@@ -183,6 +183,16 @@ class LocationWorkflowTests(unittest.TestCase):
             },
         )
 
+    def _accept_match(self, client, donation, food_request, quantity=None):
+        data = {"csrf_token": self._csrf(client, "/dashboard")}
+        if quantity is not None:
+            data["quantity"] = str(quantity)
+        return client.post(
+            f"/matches/{donation['id']}/{food_request['id']}/accept",
+            data=data,
+            follow_redirects=True,
+        )
+
     def _read_rows(self):
         db = sqlite3.connect(self.database_path)
         try:
@@ -234,17 +244,20 @@ class LocationWorkflowTests(unittest.TestCase):
         self.assertNotIn(b"Private donor pickup", recipient_matches.data)
         self.assertNotIn(b"Private recipient collection", donor_matches.data)
 
-        donor_token = self._csrf(self.donor, "/dashboard")
-        allocated = self.donor.post(
-            "/allocations",
-            data={
-                "csrf_token": donor_token,
-                "donation_id": donation["id"],
-                "request_id": food_request["id"],
-                "quantity": "5",
-            },
+        donor_acceptance = self._accept_match(
+            self.donor, donation, food_request, quantity=5
         )
-        self.assertEqual(allocated.status_code, 302)
+        self.assertIn(b"Waiting for the recipient to accept", donor_acceptance.data)
+        self.assertNotIn(b"Private donor pickup", self.recipient.get("/dashboard").data)
+        db = sqlite3.connect(self.database_path)
+        try:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM allocations").fetchone()[0], 0)
+        finally:
+            db.close()
+        recipient_acceptance = self._accept_match(
+            self.recipient, donation, food_request
+        )
+        self.assertIn(b"Both sides accepted", recipient_acceptance.data)
 
         donor_allocations = self.donor.get("/dashboard")
         recipient_allocations = self.recipient.get("/dashboard")
@@ -260,7 +273,7 @@ class LocationWorkflowTests(unittest.TestCase):
         ],
     )
     @patch("allocation.get_road_route", return_value=RoadRoute(12000, 1800))
-    def test_noneligible_pairs_show_partial_scores_in_matching_engine(
+    def test_incompatible_units_are_hard_blockers_to_acceptance(
         self, _route, _geocode
     ):
         self._create_donation(
@@ -275,13 +288,13 @@ class LocationWorkflowTests(unittest.TestCase):
 
         self.assertIn(b"Recommendations", donor_dashboard.data)
         self.assertIn(b"meals", donor_dashboard.data)
-        self.assertIn(b"Potential match", donor_dashboard.data)
-        self.assertIn(b"/100 match", donor_dashboard.data)
+        self.assertIn(b"Review together", donor_dashboard.data)
+        self.assertIn(b"/100 fit", donor_dashboard.data)
         self.assertIn(b"food categories differ", donor_dashboard.data)
         self.assertIn(b"quantity units differ", donor_dashboard.data)
         self.assertIn(b"Showing 1 of 1 candidates", donor_dashboard.data)
         donor_score = re.search(
-            rb'class="match-score">(\d+)<small>/100 match</small>',
+            rb'class="match-score">(\d+)<small>/100 fit</small>',
             donor_dashboard.data,
         )
         self.assertIsNotNone(donor_score)
@@ -291,11 +304,130 @@ class LocationWorkflowTests(unittest.TestCase):
         self.assertNotIn(b'action="/allocations"', donor_dashboard.data)
         self.assertIn(b"Recommendations", recipient_dashboard.data)
         self.assertIn(b"Fresh apples", recipient_dashboard.data)
-        self.assertIn(b"Potential match", recipient_dashboard.data)
-        self.assertIn(b"/100 match", recipient_dashboard.data)
+        self.assertIn(b"Review together", recipient_dashboard.data)
+        self.assertIn(b"/100 fit", recipient_dashboard.data)
         self.assertNotIn(b"All available listings", recipient_dashboard.data)
         self.assertNotIn(b"Private donor pickup", recipient_dashboard.data)
         self.assertNotIn(b"Private recipient collection", donor_dashboard.data)
+        blocked = self._accept_match(self.donor, *self._read_rows(), quantity=5)
+        self.assertIn(b"quantity units differ", blocked.data)
+        db = sqlite3.connect(self.database_path)
+        try:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM allocations").fetchone()[0], 0)
+            self.assertEqual(
+                db.execute(
+                    "SELECT COUNT(*) FROM match_acceptances"
+                ).fetchone()[0],
+                0,
+            )
+        finally:
+            db.close()
+
+    @patch(
+        "app.geocode_address",
+        side_effect=[
+            Coordinates(51.5, -0.12),
+            Coordinates(51.55, -0.1),
+        ],
+    )
+    @patch("allocation.get_road_route", return_value=RoadRoute(30000, 3600))
+    def test_both_parties_can_accept_non_safety_mismatches(self, _route, _geocode):
+        self._create_donation(
+            "Private donor pickup", category="lunch", quantity_unit="portions"
+        )
+        self._create_request(
+            "Private recipient collection", category="meals", quantity_unit="portions"
+        )
+        db = sqlite3.connect(self.database_path)
+        try:
+            db.execute(
+                "UPDATE requests SET dietary_requirements = 'vegetarian'"
+            )
+            db.commit()
+        finally:
+            db.close()
+        donation, food_request = self._read_rows()
+
+        recipient_acceptance = self._accept_match(
+            self.recipient, donation, food_request
+        )
+        self.assertIn(b"Waiting for the donor to accept", recipient_acceptance.data)
+        db = sqlite3.connect(self.database_path)
+        try:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM allocations").fetchone()[0], 0)
+            self.assertEqual(
+                db.execute(
+                    "SELECT remaining_quantity FROM donations WHERE id = ?",
+                    (donation["id"],),
+                ).fetchone()[0],
+                20,
+            )
+        finally:
+            db.close()
+
+        donor_acceptance = self._accept_match(
+            self.donor, donation, food_request, quantity=5
+        )
+        self.assertIn(b"Both sides accepted", donor_acceptance.data)
+        self.assertIn(b"food categories differ", donor_acceptance.data)
+        self.assertIn(b"dietary requirements are not met", donor_acceptance.data)
+        db = sqlite3.connect(self.database_path)
+        try:
+            self.assertEqual(
+                db.execute(
+                    "SELECT allocated_quantity FROM allocations"
+                ).fetchone()[0],
+                5,
+            )
+            self.assertEqual(
+                db.execute(
+                    "SELECT remaining_quantity FROM donations WHERE id = ?",
+                    (donation["id"],),
+                ).fetchone()[0],
+                15,
+            )
+            self.assertEqual(
+                db.execute("SELECT COUNT(*) FROM match_acceptances").fetchone()[0],
+                0,
+            )
+        finally:
+            db.close()
+
+    @patch(
+        "app.geocode_address",
+        side_effect=[
+            Coordinates(51.5, -0.12),
+            Coordinates(51.55, -0.1),
+        ],
+    )
+    @patch("allocation.get_road_route", return_value=RoadRoute(12000, 1800))
+    def test_allergen_and_unconfirmed_safety_block_acceptance(self, _route, _geocode):
+        self._create_donation("Private donor pickup")
+        self._create_request("Private recipient collection")
+        db = sqlite3.connect(self.database_path)
+        try:
+            db.execute(
+                "UPDATE donations SET allergens = 'peanuts', safety_confirmed = 0"
+            )
+            db.execute("UPDATE requests SET excluded_allergens = 'peanuts'")
+            db.commit()
+        finally:
+            db.close()
+        donation, food_request = self._read_rows()
+
+        response = self._accept_match(self.recipient, donation, food_request)
+
+        self.assertIn(b"excluded allergens are present", response.data)
+        self.assertIn(b"food safety has not been confirmed", response.data)
+        db = sqlite3.connect(self.database_path)
+        try:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM allocations").fetchone()[0], 0)
+            self.assertEqual(
+                db.execute("SELECT COUNT(*) FROM match_acceptances").fetchone()[0],
+                0,
+            )
+        finally:
+            db.close()
 
     @patch("allocation.get_road_route", return_value=RoadRoute(12000, 1800))
     @patch(
@@ -312,18 +444,14 @@ class LocationWorkflowTests(unittest.TestCase):
         self._create_request("Private recipient collection")
         donation, food_request = self._read_rows()
 
-        token = self._csrf(self.donor, "/dashboard")
-        allocation_response = self.donor.post(
-            "/allocations",
-            data={
-                "csrf_token": token,
-                "donation_id": donation["id"],
-                "request_id": food_request["id"],
-                "quantity": "5",
-            },
-            follow_redirects=True,
+        donor_acceptance = self._accept_match(
+            self.donor, donation, food_request, quantity=5
         )
-        self.assertIn(b"The allocation was recorded.", allocation_response.data)
+        self.assertIn(b"Waiting for the recipient to accept", donor_acceptance.data)
+        allocation_response = self._accept_match(
+            self.recipient, donation, food_request
+        )
+        self.assertIn(b"Both sides accepted", allocation_response.data)
         delete_token = self._csrf(self.donor, "/dashboard")
         response = self.donor.post(
             f"/donations/{donation['id']}/cancel",
@@ -379,18 +507,14 @@ class LocationWorkflowTests(unittest.TestCase):
         self._create_request("Private recipient collection")
         donation, food_request = self._read_rows()
 
-        token = self._csrf(self.donor, "/dashboard")
-        allocation_response = self.donor.post(
-            "/allocations",
-            data={
-                "csrf_token": token,
-                "donation_id": donation["id"],
-                "request_id": food_request["id"],
-                "quantity": "5",
-            },
-            follow_redirects=True,
+        donor_acceptance = self._accept_match(
+            self.donor, donation, food_request, quantity=5
         )
-        self.assertIn(b"The allocation was recorded.", allocation_response.data)
+        self.assertIn(b"Waiting for the recipient to accept", donor_acceptance.data)
+        allocation_response = self._accept_match(
+            self.recipient, donation, food_request
+        )
+        self.assertIn(b"Both sides accepted", allocation_response.data)
         delete_token = self._csrf(self.recipient, "/dashboard")
         response = self.recipient.post(
             f"/requests/{food_request['id']}/cancel",

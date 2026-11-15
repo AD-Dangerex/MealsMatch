@@ -2,7 +2,7 @@
 
 Meals Match is a Flask food-sharing application. It uses SQLite for local
 development and PostgreSQL on Railway. Individuals and organisations can
-publish surplus food or request food, and the matching engine ranks eligible
+publish surplus food or request food, and the matching engine ranks potential
 donation/request pairs.
 
 ## Run locally
@@ -31,15 +31,18 @@ Open `http://127.0.0.1:5000`. The app creates its SQLite database in the
   preferred pickup window, deadline, and collection notes.
 - The engine scores active listing/request pairs with quantity (25%), food
   compatibility (20%), road-distance proximity (20%), timing (15%), urgency
-  (10%), and recent allocation fairness (10%). Eligible pairs rank first;
-  other pairs show a partial score and the requirements they fail. Pickup
-  windows must overlap for a pair to be eligible.
+  (10%), and recent allocation fairness (10%). Stronger fits rank first; other
+  pairs show a partial score and the requirements they fail.
 - Search and filter recommendations by food, category, participant, city,
   storage, and distance; sort by match score, nearest route, urgency, expiry,
   or quantity. Match cards show the component breakdown.
-- Allocations remain limited to eligible recommended matches, even when a
-  partial candidate has a score.
-- Donors can record and extend partial allocations. Both parties can confirm collection.
+- Both donors and recipients must accept a recommendation before an allocation
+  is recorded. Either side can accept first; the donor sets the quantity.
+- The parties can agree to category, dietary-preference, storage, distance, and
+  pickup-time differences. Incompatible units, allergen conflicts, unconfirmed
+  food safety, expired food, and unavailable quantity remain hard blockers.
+- Donors can record and extend partial allocations after both parties accept.
+  Both parties can confirm collection.
 - Deleting a food listing or request permanently deletes its related allocation
   records; pending quantities are returned to the other listing.
 - Admins can review account, allocation, and audit-log information, see
@@ -101,19 +104,21 @@ The public terms of service are at
 Donors enter a food pickup point and recipients enter a collection point.
 OpenStreetMap Nominatim geocodes each address when submitted; OSRM calculates
 driving distance and estimated travel time between the resulting coordinates.
-The recipient chooses a maximum driving distance from 1 to 250 km (25 km by
-default). Routes beyond that hard limit are ineligible, while eligible nearby
-routes receive a higher location score. Users can further filter matches by
-distance or sort by nearest route.
+The recipient chooses a preferred maximum driving distance from 1 to 250 km
+(25 km by default). Routes beyond that preference receive a lower location
+score and are shown for the parties to review and accept. Users can further
+filter matches by distance or sort by nearest route.
 
 The route-proximity component is `max(0, 100 × (1 − road_distance /
-recipient_limit))`. Category, unit, storage, dietary, allergen, availability,
-expiry, deadline, and pickup-window checks remain hard eligibility rules. A
-partial candidate can still receive a score for its matching components, but
-the card explains failed requirements and cannot be allocated. The other score
-components are quantity fit (25%), food compatibility (20%), timing (15%),
-urgency (10%), and allocation fairness (10%), for a total of 100%. Match cards
-show the driving distance, estimated minutes, and weighted component breakdown.
+recipient_limit))`. Category, dietary preference, storage, distance, and pickup
+time differences can be accepted by both parties. Expired food, incompatible
+quantity units, allergen conflicts, unconfirmed food safety, and unavailable
+quantity remain hard blockers. A partial candidate shows the failed
+requirements; a match is only allocated after the donor and recipient both
+accept. The other score components are quantity fit (25%), food compatibility
+(20%), timing (15%), urgency (10%), and allocation fairness (10%), for a total
+of 100%. Match cards show the driving distance, estimated minutes, and weighted
+component breakdown.
 
 Exact addresses are stored with their listing/request and are never included
 in public match cards. They are shown to both matched participants only after

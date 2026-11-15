@@ -115,6 +115,18 @@ CREATE TABLE IF NOT EXISTS allocations (
     UNIQUE(donation_id, request_id)
 );
 
+CREATE TABLE IF NOT EXISTS match_acceptances (
+    donation_id INTEGER NOT NULL REFERENCES donations(id) ON DELETE CASCADE,
+    request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+    donor_accepted INTEGER NOT NULL DEFAULT 0,
+    recipient_accepted INTEGER NOT NULL DEFAULT 0,
+    proposed_quantity REAL,
+    match_score REAL NOT NULL CHECK(match_score BETWEEN 0 AND 100),
+    explanation TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(donation_id, request_id)
+);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,

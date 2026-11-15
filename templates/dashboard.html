@@ -86,7 +86,7 @@
         </section>
 
         <section class="content-panel" id="donor-matches">
-            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Recommendations</h2><p class="panel-caption">Each active request is scored against your food listings. Eligible recommendations appear first; other candidates show their score and what prevents allocation. Only eligible matches can be allocated. Distances use OpenStreetMap data. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>.</p></div></div>
+            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Recommendations</h2><p class="panel-caption">Review each scored match and accept only if you and the recipient agree. An allocation is recorded after both sides accept. Category, dietary, storage, distance, and pickup-time differences can be agreed between you; incompatible units, allergens, unconfirmed food safety, and expired food cannot be overridden. Distances use OpenStreetMap data. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>.</p></div></div>
             <form method="get" class="match-filters" role="search" aria-label="Filter recommended requests">
                 <label>Search
                     <input type="search" name="q" maxlength="80" value="{{ recommendation_filters.q }}" placeholder="Food, category, recipient, or city">
@@ -127,7 +127,7 @@
                     <a class="text-button" href="{{ url_for('dashboard') }}#donor-matches">Clear</a>
                 </div>
             </form>
-            <p class="match-count" role="status">Showing {{ recommendations|length }} of {{ recommendation_total }} candidates. Scores show weighted fit, not allocation eligibility; eligible matches appear first.</p>
+            <p class="match-count" role="status">Showing {{ recommendations|length }} of {{ recommendation_total }} candidates. Scores indicate weighted fit, not the chance of agreement.</p>
             {% if recommendations %}
             <div class="match-grid">
                 {% for match in recommendations %}
@@ -136,7 +136,7 @@
                         <img src="{{ food_image_url(match.category) }}" alt="" loading="lazy" decoding="async">
                         <span>{{ match.category }}</span>
                     </div>
-                    <div class="match-top"><span class="match-score">{{ "%.0f"|format(match.score) }}<small>/100 match</small></span><span class="status status-{{ 'open' if match.eligible else 'potential' }}">{{ "Eligible" if match.eligible else "Potential match" }}</span></div>
+                    <div class="match-top"><span class="match-score">{{ "%.0f"|format(match.score) }}<small>/100 fit</small></span><span class="status status-{{ 'open' if match.eligible else 'potential' }}">{{ "Good fit" if match.eligible else "Review together" }}</span></div>
                     <h3>{{ match.food_name }} → {{ match.recipient_name }}</h3>
                     <p>{{ match.recipient_type }} · {{ match.city }}</p>
                     <p>Listing: {{ match.category }} · Request: {{ match.requested_category }}</p>
@@ -149,20 +149,23 @@
                     {% if match.pickup_overlap_start %}
                         <p>Shared pickup window: {{ match.pickup_overlap_start|replace("T", " ") }}–{{ match.pickup_overlap_end[11:] }}</p>
                     {% endif %}
-                    <p class="match-reason">{% if match.eligible %}{{ match.explanation }}{% else %}Not eligible for allocation: {{ match.reasons|join("; ") }}.{% endif %}</p>
+                    <p class="match-reason">{% if match.reasons %}Review together: {{ match.reasons|join("; ") }}.{% else %}{{ match.explanation }}{% endif %}</p>
                     <details class="score-breakdown"><summary>See match score breakdown</summary>
                         {% for key, label in [("quantity", "Quantity"), ("compatibility", "Food compatibility"), ("proximity", "Road distance"), ("timing", "Timing"), ("urgency", "Urgency"), ("fairness", "Fairness")] %}
                             <div class="score-row"><span>{{ label }} <b>{{ "%.0f"|format(match.components[key]) }}/100 · +{{ "%.1f"|format(match.weighted_components[key]) }} points</b></span><div class="score-track"><i style="width: {{ match.components[key] }}%"></i></div></div>
                         {% endfor %}
                     </details>
-                    {% if match.eligible %}<form method="post" action="{{ url_for('create_allocation') }}" class="allocation-form">
+                    {% if match.acceptance_blockers %}
+                        <p class="match-reason">Cannot accept: {{ match.acceptance_blockers|join("; ") }}.</p>
+                    {% elif match.donor_accepted %}
+                        <p class="match-reason">You accepted{% if match.recipient_accepted %}; both sides have accepted.{% else %}; waiting for the recipient to accept.{% endif %}</p>
+                    {% else %}<form method="post" action="{{ url_for('accept_match', donation_id=match.donation_id, request_id=match.request_id) }}" class="allocation-form">
+                        {% if match.recipient_accepted %}<p class="match-reason">The recipient accepted; choose an amount to confirm.</p>{% endif %}
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="donation_id" value="{{ match.donation_id }}">
-                        <input type="hidden" name="request_id" value="{{ match.request_id }}">
-                        <label>Allocate ({{ match.quantity_unit }})
+                        <label>Quantity to offer ({{ match.quantity_unit }})
                             <input type="number" name="quantity" min="0.1" max="{{ [match.available_quantity, match.requested_quantity]|min }}" step="0.1" value="{{ [match.available_quantity, match.requested_quantity]|min }}" required>
                         </label>
-                        <button class="small-button" type="submit">Record allocation</button>
+                        <button class="small-button" type="submit">{% if match.recipient_accepted %}Accept and confirm{% else %}Accept match{% endif %}</button>
                     </form>{% endif %}
                 </article>
                 {% endfor %}
@@ -225,7 +228,7 @@
         </section>
 
         <section class="content-panel" id="recipient-matches">
-            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Recommendations</h2><p class="panel-caption">Each available food listing is scored against your requests. Eligible recommendations appear first; other candidates show their score and what prevents allocation. Distances use OpenStreetMap data. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>.</p></div></div>
+            <div class="panel-heading"><div><div class="section-label">MATCHING ENGINE</div><h2>Recommendations</h2><p class="panel-caption">Review each scored listing and accept only if you and the donor agree. An allocation is recorded after both sides accept. Category, dietary, storage, distance, and pickup-time differences can be agreed between you; incompatible units, allergens, unconfirmed food safety, and expired food cannot be overridden. Distances use OpenStreetMap data. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>.</p></div></div>
             <form method="get" class="match-filters" role="search" aria-label="Filter available food matches">
                 <label>Search
                     <input type="search" name="q" maxlength="80" value="{{ recommendation_filters.q }}" placeholder="Food, category, donor, or city">
@@ -266,7 +269,7 @@
                     <a class="text-button" href="{{ url_for('dashboard') }}#recipient-matches">Clear</a>
                 </div>
             </form>
-            <p class="match-count" role="status">Showing {{ recommendations|length }} of {{ recommendation_total }} candidates. Scores show weighted fit, not allocation eligibility; eligible matches appear first.</p>
+            <p class="match-count" role="status">Showing {{ recommendations|length }} of {{ recommendation_total }} candidates. Scores indicate weighted fit, not the chance of agreement.</p>
             {% if recommendations %}
             <div class="match-grid">{% for match in recommendations %}
                 <article class="match-card">
@@ -274,7 +277,7 @@
                         <img src="{{ food_image_url(match.category) }}" alt="" loading="lazy" decoding="async">
                         <span>{{ match.category }}</span>
                     </div>
-                    <div class="match-top"><span class="match-score">{{ "%.0f"|format(match.score) }}<small>/100 match</small></span><span class="status status-{{ 'available' if match.eligible else 'potential' }}">{{ "Eligible" if match.eligible else "Potential match" }}</span></div>
+                    <div class="match-top"><span class="match-score">{{ "%.0f"|format(match.score) }}<small>/100 fit</small></span><span class="status status-{{ 'available' if match.eligible else 'potential' }}">{{ "Good fit" if match.eligible else "Review together" }}</span></div>
                     <h3>{{ match.food_name }}</h3>
                     <p>{{ match.donor_name }} · {{ match.donor_type }} · {{ match.city }}</p>
                     <p>Food listing: {{ match.category }} · Your request: {{ match.requested_category }}</p>
@@ -287,12 +290,21 @@
                     {% if match.pickup_overlap_start %}
                         <p>Shared pickup window: {{ match.pickup_overlap_start|replace("T", " ") }}–{{ match.pickup_overlap_end[11:] }}</p>
                     {% endif %}
-                    <p class="match-reason">{% if match.eligible %}{{ match.explanation }}{% else %}Not eligible for allocation: {{ match.reasons|join("; ") }}.{% endif %}</p>
+                    <p class="match-reason">{% if match.reasons %}Review together: {{ match.reasons|join("; ") }}.{% else %}{{ match.explanation }}{% endif %}</p>
                     <details class="score-breakdown"><summary>See match score breakdown</summary>
                         {% for key, label in [("quantity", "Quantity"), ("compatibility", "Food compatibility"), ("proximity", "Road distance"), ("timing", "Timing"), ("urgency", "Urgency"), ("fairness", "Fairness")] %}
                             <div class="score-row"><span>{{ label }} <b>{{ "%.0f"|format(match.components[key]) }}/100 · +{{ "%.1f"|format(match.weighted_components[key]) }} points</b></span><div class="score-track"><i style="width: {{ match.components[key] }}%"></i></div></div>
                         {% endfor %}
                     </details>
+                    {% if match.acceptance_blockers %}
+                        <p class="match-reason">Cannot accept: {{ match.acceptance_blockers|join("; ") }}.</p>
+                    {% elif match.recipient_accepted %}
+                        <p class="match-reason">You accepted{% if match.donor_accepted %}; both sides have accepted.{% else %}; waiting for the donor to accept.{% endif %}</p>
+                    {% else %}<form method="post" action="{{ url_for('accept_match', donation_id=match.donation_id, request_id=match.request_id) }}" class="allocation-form">
+                        {% if match.donor_accepted %}<p class="match-reason">The donor accepted; review the offer and accept to confirm.</p>{% endif %}
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="small-button" type="submit">{% if match.donor_accepted %}Accept and confirm{% else %}Accept match{% endif %}</button>
+                    </form>{% endif %}
                 </article>
             {% endfor %}</div>
             {% else %}
