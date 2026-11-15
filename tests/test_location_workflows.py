@@ -327,6 +327,15 @@ class LocationWorkflowTests(unittest.TestCase):
                 ).fetchone()[0],
                 0,
             )
+            self.assertEqual(
+                db.execute(
+                    """SELECT COUNT(*) FROM audit_logs
+                       WHERE entity_type = 'allocation'
+                         AND action = 'allocated' AND entity_id = ?""",
+                    (donation["id"],),
+                ).fetchone()[0],
+                0,
+            )
             restored_request = db.execute(
                 "SELECT remaining_quantity, status FROM requests WHERE id = ?",
                 (food_request["id"],),
@@ -382,6 +391,15 @@ class LocationWorkflowTests(unittest.TestCase):
                 db.execute(
                     "SELECT COUNT(*) FROM allocations WHERE request_id = ?",
                     (food_request["id"],),
+                ).fetchone()[0],
+                0,
+            )
+            self.assertEqual(
+                db.execute(
+                    """SELECT COUNT(*) FROM audit_logs
+                       WHERE entity_type = 'allocation'
+                         AND action = 'allocated' AND details LIKE ?""",
+                    (f"%to request {food_request['id']}",),
                 ).fetchone()[0],
                 0,
             )

@@ -1512,6 +1512,20 @@ def cancel_donation(donation_id):
                 (remaining_quantity, status, food_request["id"]),
             )
 
+        db.execute(
+            """DELETE FROM audit_logs
+               WHERE entity_type = 'allocation'
+                 AND (
+                     (action = 'allocated' AND entity_id = ?)
+                     OR (
+                         action = 'collected'
+                         AND entity_id IN (
+                             SELECT id FROM allocations WHERE donation_id = ?
+                         )
+                     )
+                 )""",
+            (donation_id, donation_id),
+        )
         db.execute("DELETE FROM allocations WHERE donation_id = ?", (donation_id,))
         db.execute("DELETE FROM donations WHERE id = ?", (donation_id,))
         audit(
@@ -1587,6 +1601,20 @@ def cancel_request(request_id):
                 (remaining_quantity, status, donation["id"]),
             )
 
+        db.execute(
+            """DELETE FROM audit_logs
+               WHERE entity_type = 'allocation'
+                 AND (
+                     (action = 'allocated' AND details LIKE ?)
+                     OR (
+                         action = 'collected'
+                         AND entity_id IN (
+                             SELECT id FROM allocations WHERE request_id = ?
+                         )
+                     )
+                 )""",
+            (f"%to request {request_id}", request_id),
+        )
         db.execute("DELETE FROM allocations WHERE request_id = ?", (request_id,))
         db.execute("DELETE FROM requests WHERE id = ?", (request_id,))
         audit(
